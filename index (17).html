@@ -1,0 +1,2549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RSM Pending Bills</title>
+<link rel="icon" href="data:,">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+// Patch XLSX to enable cell styles (xlsx 0.18.x writeFile needs bookSST + cellStyles)
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.XLSX) {
+    // Enable style support by default
+    XLSX.SSF = XLSX.SSF || {};
+  }
+});
+</script>
+<style>
+:root {
+  --g1:#1b5e20;--g2:#2e7d32;--g3:#43a047;
+  --gbg:#e8f5e9;--red:#c62828;--redbg:#ffebee;
+  --bg:#f0f4f0;--white:#fff;--text:#1a2e1a;
+  --muted:#5a705a;--border:#ccdacc;
+  --shadow:0 2px 16px rgba(46,125,50,0.10);
+  --radius:13px;
+  --gold:#8B6914;
+  --gold-light:#C49A28;
+  --gold-bg:#FFF8E1;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+.page{display:none;}
+.page.active{display:block;}
+#loginPage.active{display:flex;}
+
+/* LOGIN */
+#loginPage{min-height:100vh;align-items:center;justify-content:center;
+  background:url('https://qqxytktebllfboiiewxv.supabase.co/storage/v1/object/public/assets/backgroung.jpg') center/cover no-repeat;
+  position:relative;}
+#loginPage::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(27,94,32,0.75) 0%,rgba(46,125,50,0.65) 50%,rgba(93,64,55,0.75) 100%);
+  z-index:0;
+}
+#loginPage .login-box{position:relative;z-index:1;}
+.login-box{background:white;border-radius:22px;padding:48px 40px;width:100%;max-width:400px;
+  box-shadow:0 24px 64px rgba(0,0,0,0.22);text-align:center;
+  border-top:4px solid #C49A28;}
+.login-logo{font-family:'Baloo 2',sans-serif;font-size:2.2rem;font-weight:800;color:var(--g2);margin-bottom:2px;}
+.login-sub{color:var(--muted);font-size:0.87rem;margin-bottom:30px;}
+.form-group{margin-bottom:15px;text-align:left;}
+.form-group label{display:block;font-weight:700;font-size:0.8rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+.form-group input{width:100%;padding:12px 15px;border:2px solid var(--border);border-radius:10px;
+  font-size:.95rem;font-family:'Nunito',sans-serif;outline:none;transition:border .2s;color:var(--text);}
+.form-group input:focus{border-color:var(--g2);}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 20px;border:none;border-radius:10px;font-size:.88rem;
+  font-family:'Nunito',sans-serif;font-weight:700;cursor:pointer;transition:all .18s;}
+.btn-primary{background:var(--g2);color:white;width:100%;padding:14px;font-size:1rem;margin-top:6px;}
+.btn-primary:hover{background:var(--g3);}
+.btn-primary:disabled{opacity:.6;cursor:not-allowed;}
+.btn-green{background:var(--g2);color:white;}
+.btn-green:hover{background:var(--g3);}
+.btn-red{background:var(--red);color:white;}
+.btn-red:hover{background:#e53935;}
+.btn-outline{background:white;color:var(--g2);border:2px solid var(--g2);}
+.btn-outline:hover{background:var(--gbg);}
+.btn-sm{padding:6px 12px;font-size:.8rem;}
+.err-box{background:var(--redbg);border:1px solid #ef9a9a;border-radius:8px;
+  padding:9px 13px;color:var(--red);font-size:.86rem;margin-top:10px;display:none;}
+
+/* NAVBAR */
+.navbar{background:linear-gradient(90deg,#1b5e20,#2e7d32);padding:0 24px;height:72px;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 10px rgba(0,0,0,.15);position:sticky;top:0;z-index:100;}
+.nav-brand{font-family:'Baloo 2',sans-serif;font-size:1.45rem;font-weight:700;color:white;}
+.nav-right{display:flex;align-items:center;gap:12px;}
+.nav-user{color:rgba(255,255,255,.9);font-size:.88rem;font-weight:600;}
+.btn-logout{background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.3);
+  padding:7px 15px;font-size:.83rem;}
+.btn-logout:hover{background:rgba(255,255,255,.25);}
+
+/* TABS */
+.tabs{display:flex;gap:0;margin-bottom:22px;border-bottom:2px solid var(--border);}
+.tab-btn{background:none;border:none;padding:12px 22px;font-family:'Nunito',sans-serif;
+  font-size:.95rem;font-weight:700;cursor:pointer;color:var(--muted);
+  border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .18s;}
+.tab-btn.active{color:var(--g2);border-bottom-color:var(--g2);}
+.tab-btn:hover{color:var(--g2);}
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+
+/* CONTAINER */
+.wrap{max-width:1100px;margin:0 auto;padding:26px 20px;}
+
+/* SUMMARY */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:26px;}
+.stat-card{background:white;border-radius:var(--radius);padding:18px 22px;
+  box-shadow:var(--shadow);border-left:4px solid var(--g2);}
+.stat-card.red{border-left-color:var(--red);}
+.stat-card.gold{border-left-color:var(--gold-light);}
+.stat-card.gold .stat-val{color:var(--gold);}
+.stat-label{font-size:.76rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;}
+.stat-val{font-size:1.6rem;font-weight:800;color:var(--g2);font-family:'Baloo 2',sans-serif;margin-top:3px;}
+.stat-card.red .stat-val{color:var(--red);}
+
+/* SECTION HEADER */
+.sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+.sec-title{font-family:'Baloo 2',sans-serif;font-size:1.3rem;font-weight:700;}
+.search{padding:10px 15px;border:2px solid var(--border);border-radius:10px;
+  font-size:.88rem;font-family:'Nunito',sans-serif;outline:none;width:210px;}
+.search:focus{border-color:var(--g2);}
+
+/* TABLE */
+.tbl-wrap{background:white;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;}
+table{width:100%;border-collapse:collapse;}
+thead{background:linear-gradient(90deg,#1b5e20,#2e7d32);}
+thead th{color:white;padding:13px 15px;text-align:left;font-size:.78rem;
+  text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
+tbody tr{border-bottom:1px solid #edf2ed;transition:background .13s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:#f4faf4;}
+tbody td{padding:12px 15px;font-size:.9rem;}
+.total-row td{background:#e8f5e9;color:var(--g2);font-weight:800;}
+.clink{color:var(--g2);font-weight:700;cursor:pointer;}
+.clink:hover{text-decoration:underline;}
+
+/* BADGES */
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:.74rem;font-weight:700;}
+.badge-partial{background:var(--redbg);color:var(--red);}
+.badge-new{background:var(--gbg);color:var(--g1);}
+.badge-pending{background:#fff3e0;color:#e65100;}
+.badge-paid{background:#e8f5e9;color:#1b5e20;}
+.row-partial{background:#fff8f8 !important;}
+.row-new{background:#f2fff2 !important;}
+
+/* MODAL */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.48);
+  z-index:200;align-items:center;justify-content:center;padding:20px;}
+.overlay.open{display:flex;}
+.modal{background:white;border-radius:16px;padding:28px;width:100%;max-width:450px;
+  box-shadow:0 20px 60px rgba(0,0,0,.22);max-height:90vh;overflow-y:auto;}
+.modal h3{font-family:'Baloo 2',sans-serif;font-size:1.2rem;margin-bottom:18px;}
+.modal .form-group input{width:100%;padding:11px 13px;border:2px solid var(--border);
+  border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;color:var(--text);}
+.modal .form-group input:focus{border-color:var(--g2);}
+.modal-foot{display:flex;gap:9px;justify-content:flex-end;margin-top:20px;}
+
+/* DETAIL */
+.back{display:inline-flex;align-items:center;gap:5px;color:var(--g2);font-weight:700;
+  cursor:pointer;margin-bottom:16px;font-size:.92rem;}
+.back:hover{text-decoration:underline;}
+.det-head{background:white;border-radius:var(--radius);padding:18px 22px;
+  margin-bottom:18px;box-shadow:var(--shadow);display:flex;
+  justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+.det-head h2{font-family:'Baloo 2',sans-serif;font-size:1.4rem;}
+.det-total{font-size:1.2rem;font-weight:800;color:var(--red);}
+
+/* SELECT BAR */
+.sel-bar{background:var(--gbg);border:2px solid var(--g2);border-radius:var(--radius);
+  padding:11px 18px;margin-bottom:14px;display:none;
+  align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.sel-bar.show{display:flex;}
+.sel-bar span{font-weight:700;color:var(--g2);}
+
+/* INFO BOX */
+.info-box{background:var(--gbg);border-radius:10px;padding:13px 15px;margin-bottom:16px;}
+.info-box .il{font-size:.77rem;color:var(--muted);font-weight:700;text-transform:uppercase;}
+.info-box .iv{font-size:1.45rem;font-weight:800;color:var(--g2);}
+
+/* TOAST */
+.toast{position:fixed;bottom:22px;right:22px;z-index:999;padding:13px 20px;
+  border-radius:12px;font-weight:700;font-size:.9rem;
+  box-shadow:0 4px 20px rgba(0,0,0,.18);transform:translateY(70px);opacity:0;
+  transition:all .3s;pointer-events:none;max-width:300px;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.ok{background:#1b5e20;color:white;}
+.toast.fail{background:var(--red);color:white;}
+
+/* EMPTY */
+.empty{text-align:center;padding:44px 20px;color:var(--muted);}
+.empty .ei{font-size:2.6rem;margin-bottom:10px;}
+
+/* SPINNER */
+.spin{display:inline-block;width:18px;height:18px;border:3px solid rgba(255,255,255,.4);
+  border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* PAID HISTORY FILTER BAR */
+.filter-bar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+.filter-bar input,.filter-bar select{padding:9px 13px;border:2px solid var(--border);border-radius:9px;
+  font-size:.87rem;font-family:'Nunito',sans-serif;outline:none;}
+.filter-bar input:focus,.filter-bar select:focus{border-color:var(--g2);}
+
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--g2);cursor:pointer;}
+
+/* WATERMARK */
+.page.active::after {
+  content: '';
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 750px;
+  height: 750px;
+  background: url('https://qqxytktebllfboiiewxv.supabase.co/storage/v1/object/public/assets/logo.png') center/contain no-repeat;
+  opacity: 0.045;
+  pointer-events: none;
+  z-index: 0;
+}
+#loginPage.active::after { display: none; }
+.wrap { position: relative; z-index: 1; }
+.navbar { position: relative; z-index: 2; }
+
+/* QUICK ADD BILL BAR */
+.quick-add-bar{
+  position:relative;z-index:1;
+  background:linear-gradient(135deg,#e8f5e9,#f1f8e9);
+  border:2px solid var(--g2);border-radius:var(--radius);
+  padding:14px 18px;margin-bottom:16px;
+  box-shadow:0 4px 18px rgba(46,125,50,0.13);
+}
+.quick-add-bar .qa-title{
+  font-family:'Baloo 2',sans-serif;font-size:1rem;font-weight:700;
+  color:var(--g1);margin-bottom:10px;display:flex;align-items:center;gap:6px;
+}
+.quick-add-fields{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+.quick-add-fields .qa-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px;}
+.quick-add-fields .qa-field label{font-size:.73rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.quick-add-fields .qa-field input{
+  padding:10px 12px;border:2px solid var(--border);border-radius:9px;
+  font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;
+  background:white;color:var(--text);transition:border .18s;
+}
+.quick-add-fields .qa-field input:focus{border-color:var(--g2);}
+.qa-btn{padding:10px 22px;font-size:.92rem;align-self:flex-end;white-space:nowrap;}
+
+
+/* CHEQUE SELECT STYLES */
+.qa-field select, .form-group select {
+  width:100%;padding:10px 12px;border:2px solid var(--border);border-radius:9px;
+  font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;
+  background:white;color:var(--text);transition:border .18s;cursor:pointer;
+}
+.qa-field select:focus, .form-group select:focus { border-color:var(--g2); }
+
+/* CHEQUE DATE GROUP */
+.cheque-date-group {
+  background:white;border-radius:var(--radius);box-shadow:var(--shadow);
+  margin-bottom:18px;overflow:hidden;
+}
+.cheque-date-header {
+  background:linear-gradient(90deg,#1b5e20,#2e7d32);
+  color:white;padding:11px 16px;
+  font-family:'Baloo 2',sans-serif;font-size:1rem;font-weight:700;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.cheque-date-total { font-size:.88rem;font-weight:600;opacity:.9; }
+
+/* CHEQUE SUB-TABS */
+.ctabs{display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid var(--border);}
+.ctab-btn{background:none;border:none;padding:11px 20px;font-family:'Nunito',sans-serif;
+  font-size:.92rem;font-weight:700;cursor:pointer;color:var(--muted);
+  border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .18s;}
+.ctab-btn.active{color:#1565c0;border-bottom-color:#1565c0;}
+.ctab-btn:hover{color:#1565c0;}
+
+/* CHEQUE QUICK ADD */
+.cheque-add-bar {
+  position:relative;
+  background:linear-gradient(135deg,#e3f2fd,#e8eaf6);
+  border:2px solid #1565c0;border-radius:var(--radius);
+  padding:16px 20px;margin-bottom:16px;
+  box-shadow:0 4px 18px rgba(21,101,192,0.13);
+}
+.cheque-add-bar .qa-title { color:#0d47a1; }
+.cheque-add-bar .quick-add-fields { display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end; }
+.cheque-add-bar .qa-field { display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px; }
+.cheque-add-bar .qa-field label { font-size:.73rem;font-weight:700;color:#1565c0;text-transform:uppercase;letter-spacing:.4px; }
+.cheque-add-bar .qa-field input,
+.cheque-add-bar .qa-field select {
+  width:100%;padding:10px 12px;border:2px solid #bbdefb;border-radius:9px;
+  font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;
+  background:white;color:var(--text);transition:border .18s;
+}
+.cheque-add-bar .qa-field input:focus,
+.cheque-add-bar .qa-field select:focus { border-color:#1565c0; }
+.btn-blue{background:#1565c0;color:white;}
+.btn-blue:hover{background:#1976d2;}
+
+/* ── NEW CUSTOMER WISE TABLE DESIGN ── */
+.cust-table-wrap{background:white;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;}
+.cust-table-wrap table{width:100%;border-collapse:collapse;table-layout:fixed;}
+.cust-table-wrap thead th{
+  background:#2e7d32;color:white;
+  padding:14px 16px;text-align:center;
+  font-size:.82rem;text-transform:uppercase;letter-spacing:.7px;font-weight:800;
+  border-right:1px solid rgba(255,255,255,.18);
+}
+.cust-table-wrap thead th:nth-child(1){width:70px;text-align:center;}
+.cust-table-wrap thead th:nth-child(2){text-align:left;}
+.cust-table-wrap thead th:nth-child(3){width:150px;text-align:center;}
+.cust-table-wrap thead th:nth-child(4){width:210px;text-align:right;}
+.cust-table-wrap thead th:nth-child(5){width:200px;text-align:center;}
+.cust-table-wrap thead th:last-child{border-right:none;}
+.cust-table-wrap .subtotal-row td{
+  background:#e8f5e9;padding:11px 16px;
+  border-bottom:2px solid #a5d6a7;
+  font-weight:800;font-size:.95rem;color:var(--g1);text-align:center;
+}
+.cust-table-wrap .subtotal-row td:nth-child(2){text-align:left;}
+.cust-table-wrap .subtotal-row td:nth-child(4){text-align:right;}
+.cust-table-wrap tbody tr{border-bottom:1px solid #edf2ed;transition:background .13s;}
+.cust-table-wrap tbody tr:hover{background:#f4faf4;}
+.cust-table-wrap tbody td{
+  padding:10px 16px;font-size:.92rem;text-align:center;
+  border-right:1px solid #edf2ed;
+}
+.cust-table-wrap tbody td:nth-child(2){text-align:left;}
+.cust-table-wrap tbody td:nth-child(4){text-align:right;font-weight:700;display:table-cell !important;}
+.cust-table-wrap tbody td:last-child{border-right:none;text-align:center;}
+.cust-table-wrap .grand-row td{
+  background:#2e7d32;color:white;
+  padding:13px 16px;font-weight:800;font-size:.95rem;text-align:center;
+  border-right:1px solid rgba(255,255,255,.18);
+}
+.cust-table-wrap .grand-row td:nth-child(2){text-align:right;}
+.cust-table-wrap .grand-row td:nth-child(4){text-align:right;display:table-cell !important;}
+.cust-table-wrap .grand-row td:last-child{border-right:none;text-align:center;}
+.cust-search-input{
+  width:100%;padding:8px 12px;border:2px solid var(--border);border-radius:8px;
+  font-size:.88rem;font-family:'Nunito',sans-serif;outline:none;background:white;
+}
+.cust-search-input:focus{border-color:var(--g2);}
+
+@media(max-width:640px){
+  .stats{grid-template-columns:1fr 1fr;}
+  .sec-head{flex-direction:column;align-items:flex-start;}
+  .login-box{padding:30px 22px;margin:16px;}
+  .quick-add-fields{flex-direction:column;}
+}
+
+/* DRAG AND DROP */
+.drag-handle{cursor:grab;color:#bbb;font-size:1.1rem;padding:0 4px;user-select:none;display:inline-block;}
+.drag-handle:active{cursor:grabbing;}
+tr.dragging{opacity:0.4;background:#e8f5e9 !important;}
+tr.drag-over{border-top:3px solid #2e7d32 !important;background:#f1f8f1 !important;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginPage" class="page active">
+  <div class="login-box">
+    <div style="margin-bottom:16px;">
+      <img src="https://qqxytktebllfboiiewxv.supabase.co/storage/v1/object/public/assets/logo.png" alt="RSM Agro Group" style="height:115px;object-fit:contain;"/>
+    </div>
+    <div class="login-sub">Pending Bills Management System</div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="loginEmail" placeholder="Enter username" autocomplete="username"/>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="Enter your password"/>
+    </div>
+    <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Login →</button>
+    <div class="err-box" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- REGISTER MODAL -->
+<div class="overlay" id="regModal">
+  <div class="modal">
+    <h3>📝 Create Account</h3>
+    <div class="form-group"><label>Email *</label><input type="email" id="regEmail" placeholder="your@email.com"/></div>
+    <div class="form-group"><label>Password *</label><input type="password" id="regPass" placeholder="Min 6 characters"/></div>
+    <div class="err-box" id="regErr" style="display:none;"></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('regModal')">Cancel</button>
+      <button class="btn btn-green" onclick="doRegister()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashPage" class="page">
+  <nav class="navbar">
+    <div class="nav-brand" style="display:flex;align-items:center;gap:8px;">
+      <img src="https://qqxytktebllfboiiewxv.supabase.co/storage/v1/object/public/assets/logo.png" alt="RSM Agro Group" style="height:58px;object-fit:contain;border-radius:6px;background:white;padding:4px;"/>
+      <div style="display:flex;flex-direction:column;line-height:1.1;">
+        <span style="font-size:1.15rem;font-weight:800;color:white;">RSM Agro Group</span>
+        <span style="font-size:0.7rem;color:rgba(255,255,255,0.8);font-weight:500;letter-spacing:0.3px;">Pending Bills Management</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <span class="nav-user" id="navUser">👤</span>
+      <button class="btn btn-logout" id="backupBtn" onclick="downloadBackup()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);" title="Download full backup as CSV">📥 Backup</button>
+      <button class="btn btn-logout" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="wrap">
+    <!-- STATS -->
+    <div class="stats">
+      <div class="stat-card"><div class="stat-label">Total Customers</div><div class="stat-val" id="sTotalC">0</div></div>
+      <div class="stat-card"><div class="stat-label">Pending Bills</div><div class="stat-val" id="sTotalB">0</div></div>
+      <div class="stat-card red"><div class="stat-label">Total Pending Amount</div><div class="stat-val" id="sTotalA">₹0</div></div>
+    </div>
+    <!-- SECURITY + BACKUP INFO BAR -->
+    <div style="background:#e8f5e9;border:1.5px solid #a5d6a7;border-radius:10px;padding:10px 16px;margin-bottom:18px;font-size:.82rem;color:#2e7d32;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span>🔒 <strong>Your data is securely stored in Supabase cloud</strong> — auto-backed up daily. Use <strong>📥 Backup</strong> to download a local CSV copy anytime.</span>
+      <span id="lastSyncTime" style="font-size:.78rem;color:#558b2f;font-weight:600;"></span>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('pending')">📋 Pending Bills</button>
+      <button class="tab-btn" onclick="switchTab('history')">📜 Paid History</button>
+      <button class="tab-btn" onclick="goCheque()">🏦 Cheque Entry</button>
+    </div>
+
+    <!-- TAB: PENDING BILLS -->
+    <div class="tab-panel active" id="tabPending">
+      <div style="margin-bottom:12px;">
+        <input id="custSearch" placeholder="🔍 Search customer..." oninput="filterC()"
+          style="width:100%;max-width:340px;padding:10px 16px;border:2px solid #ccdacc;border-radius:10px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;"/>
+      </div>
+      <div class="sec-head">
+        <div class="sec-title">📋 Customer List</div>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-sm" style="background:#1b5e20;color:white;" onclick="exportBillsCustomerExcel()">⬇️ Export to Excel</button>
+          <button class="btn btn-green" onclick="openOverlay('addCustModal')">+ Add Customer</button>
+        </div>
+      </div>
+      <div class="cust-table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:70px;">S.NO</th>
+            <th style="text-align:left;">CUSTOMER NAME</th>
+            <th>NO. OF BILLS</th>
+            <th>TOTAL PENDING AMOUNT</th>
+            <th>ACTIONS</th>
+          </tr></thead>
+          <tbody id="custBody"><tr><td colspan="5"><div class="empty"><div class="ei">⏳</div>Loading...</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB: PAID BILLS HISTORY -->
+    <div class="tab-panel" id="tabHistory">
+      <div class="sec-head">
+        <div class="sec-title">📜 Paid Bills History</div>
+        <button class="btn btn-outline btn-sm" onclick="loadPaidHistory()">🔄 Refresh</button>
+      </div>
+      <div class="filter-bar">
+        <input type="text" id="histSearch" placeholder="🔍 Search customer..." oninput="filterHistory()"/>
+        <input type="date" id="histFrom" onchange="filterHistory()" title="From date"/>
+        <input type="date" id="histTo" onchange="filterHistory()" title="To date"/>
+        <button class="btn btn-outline btn-sm" onclick="clearHistFilter()">Clear Filter</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>S.No</th><th>Date Paid</th><th>Customer Name</th><th>Ref No</th><th>Amount Paid</th></tr></thead>
+          <tbody id="histBody"><tr><td colspan="5"><div class="empty"><div class="ei">⏳</div>Loading...</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- CUSTOMER DETAIL -->
+<div id="detPage" class="page">
+  <nav class="navbar">
+    <div class="nav-brand" style="display:flex;align-items:center;gap:8px;">
+      <img src="https://qqxytktebllfboiiewxv.supabase.co/storage/v1/object/public/assets/logo.png" alt="RSM Agro Group" style="height:58px;object-fit:contain;border-radius:6px;background:white;padding:4px;"/>
+      <div style="display:flex;flex-direction:column;line-height:1.1;">
+        <span style="font-size:1.15rem;font-weight:800;color:white;">RSM Agro Group</span>
+        <span style="font-size:0.7rem;color:rgba(255,255,255,0.8);font-weight:500;letter-spacing:0.3px;">Pending Bills Management</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <span class="nav-user" id="navUser2">👤</span>
+      <button class="btn btn-logout" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="wrap">
+    <div class="back" onclick="goBack()">← Back to Customers</div>
+    <div class="det-head">
+      <div><h2 id="detName">-</h2><div style="color:var(--muted);font-size:.83rem;margin-top:2px;">Pending Bills</div></div>
+      <div class="det-total" id="detTotal">₹0.00</div>
+    </div>
+    <!-- QUICK ADD BILL BAR (sticky, always visible) -->
+    <div class="quick-add-bar" id="quickAddBar">
+      <div class="qa-title">➕ Add New Bill <span id="qaSaveInd" style="font-size:.78rem;font-weight:600;color:#388e3c;margin-left:10px;opacity:0;transition:opacity .4s;"></span></div>
+      <div class="quick-add-fields">
+        <div class="qa-field">
+          <label>Amount (₹) *</label>
+          <input type="number" id="qaAmt" placeholder="e.g. 50000" min="1" autocomplete="off"/>
+        </div>
+        <button class="btn btn-green qa-btn" onclick="quickAddBill()">✅ Add Bill</button>
+      </div>
+    </div>
+
+    <!-- BILL AMOUNT SEARCH -->
+    <div style="margin-bottom:8px;position:relative;">
+      <input type="number" id="billAmtSearch" placeholder="🔍 Search by pending amount... (e.g. 58140)"
+        oninput="searchBillAmount()"
+        style="width:100%;padding:11px 42px 11px 16px;border:2px solid var(--border);border-radius:10px;
+          font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;background:white;color:var(--text);
+          transition:border .2s;box-shadow:0 1px 6px rgba(46,125,50,0.07);"
+        onfocus="this.style.borderColor='var(--g2)'" onblur="this.style.borderColor='var(--border)'"/>
+      <span onclick="clearBillSearch()" title="Clear search"
+        style="position:absolute;right:13px;top:50%;transform:translateY(-50%);
+          cursor:pointer;color:#aaa;font-size:1rem;font-weight:700;user-select:none;"
+        id="billSearchClear" style="display:none;">✕</span>
+      <div id="billSearchInfo" style="font-size:.78rem;color:var(--g2);font-weight:700;
+        margin-top:5px;min-height:18px;padding-left:4px;"></div>
+    </div>
+
+    <!-- COMBINATION SEARCH -->
+    <div style="margin-bottom:12px;position:relative;">
+      <div style="position:relative;">
+        <input type="number" id="billComboSearch" placeholder="🔗 Combination search — total paid for 2+ bills combined (e.g. 125000)"
+          oninput="searchBillCombination()"
+          style="width:100%;padding:11px 42px 11px 16px;border:2px solid #7b1fa2;border-radius:10px;
+            font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;background:#fdf6ff;color:var(--text);
+            transition:border .2s;box-shadow:0 1px 6px rgba(123,31,162,0.08);"
+          onfocus="this.style.borderColor='#6a1b9a'" onblur="this.style.borderColor='#7b1fa2'"/>
+        <span onclick="clearComboSearch()" title="Clear"
+          id="billComboSearchClear"
+          style="position:absolute;right:13px;top:50%;transform:translateY(-50%);
+            cursor:pointer;color:#aaa;font-size:1rem;font-weight:700;user-select:none;display:none;">&#x2715;</span>
+      </div>
+      <div id="billComboInfo" style="font-size:.78rem;font-weight:700;margin-top:5px;min-height:18px;padding-left:4px;"></div>
+      <div id="billComboResults" style="margin-top:6px;"></div>
+    </div>
+
+
+    <div class="sel-bar" id="selBar">
+      <span id="selCount">0 selected</span>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;">
+        <button class="btn btn-green btn-sm" onclick="paySelected()">✅ Mark Selected Paid</button>
+        <button class="btn btn-outline btn-sm" onclick="clearSel()">✕ Clear</button>
+      </div>
+    </div>
+    <div class="sec-head">
+      <div class="sec-title">🧾 Bills <span id="billCountBadge" style="font-size:.8rem;font-weight:600;color:var(--muted);margin-left:6px;"></span></div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th style="width:28px;"></th><th><input type="checkbox" id="chkAll" onchange="toggleAll(this)"/></th>
+          <th>S.No</th><th>Date</th>
+          <th>Pending Amount</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="billBody"><tr><td colspan="7"><div class="empty"><div class="ei">⏳</div>Loading...</div></td></tr></tbody>
+      </table>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 16px;border-top:1px solid #eee;">
+        <button id="showAllBtn" onclick="toggleShowAll()" 
+          style="padding:7px 16px;border:1.5px solid #2e7d32;border-radius:8px;background:white;color:#2e7d32;font-weight:700;cursor:pointer;font-size:.83rem;font-family:inherit;">
+          📋 Show All Bills
+        </button>
+        <div id="billPager"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD CUSTOMER -->
+<div class="overlay" id="addCustModal">
+  <div class="modal">
+    <h3>➕ Add Customer</h3>
+    <div class="form-group"><label>Customer Name *</label><input type="text" id="newCName" placeholder="e.g. SKM TRADERS"/></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('addCustModal')">Cancel</button>
+      <button class="btn btn-green" onclick="addCustomer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT CUSTOMER -->
+<div class="overlay" id="editCustModal">
+  <div class="modal">
+    <h3>✏️ Edit Customer</h3>
+    <input type="hidden" id="editCId"/>
+    <div class="form-group"><label>Customer Name *</label><input type="text" id="editCName"/></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('editCustModal')">Cancel</button>
+      <button class="btn btn-green" onclick="updateCustomer()">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD BILL (Invoice No removed) -->
+<div class="overlay" id="addBillModal">
+  <div class="modal">
+    <h3>➕ Add Bill</h3>
+    <div class="form-group"><label>Bill Date *</label><input type="date" id="nDate"/></div>
+    <div class="form-group"><label>Amount (₹) *</label><input type="number" id="nAmt" placeholder="e.g. 50000" min="1"/></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('addBillModal')">Cancel</button>
+      <button class="btn btn-green" onclick="addBill()">Save Bill</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT BILL -->
+<div class="overlay" id="editBillModal">
+  <div class="modal">
+    <h3>✏️ Edit Bill</h3>
+    <input type="hidden" id="eBId"/>
+    <div class="form-group"><label>Bill Date *</label><input type="date" id="eDate"/></div>
+    <div class="form-group"><label>Pending Amount (₹) *</label><input type="number" id="eAmt" min="0"/></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('editBillModal')">Cancel</button>
+      <button class="btn btn-green" onclick="updateBill()">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- PAY MODAL -->
+<div class="overlay" id="payModal">
+  <div class="modal">
+    <h3>💰 Record Payment</h3>
+    <input type="hidden" id="pBId"/>
+    <div class="info-box"><div class="il">Current Pending</div><div class="iv" id="pPending">₹0</div></div>
+    <div class="form-group"><label>Amount Paying Now (₹) *</label><input type="number" id="pAmt" placeholder="Enter amount" min="1"/></div>
+    <div style="font-size:.81rem;color:var(--muted);margin-bottom:4px;">💡 Enter full amount to clear, partial for partial payment (shows 🔴 red)</div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('payModal')">Cancel</button>
+      <button class="btn btn-green" onclick="submitPay()">✅ Confirm Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ CHEQUE PAGE ═══════ -->
+<div id="chequePage" class="page">
+  <nav class="navbar" style="background:linear-gradient(90deg,#0d47a1,#1565c0);">
+    <div class="nav-brand" style="display:flex;align-items:center;gap:8px;">
+      <img src="https://qqxytktebllfboiiewxv.supabase.co/storage/v1/object/public/assets/logo.png" alt="RSM Agro Group" style="height:58px;object-fit:contain;border-radius:6px;background:white;padding:4px;"/>
+      <div style="display:flex;flex-direction:column;line-height:1.1;">
+        <span style="font-size:1.15rem;font-weight:800;color:white;">RSM Agro Group</span>
+        <span style="font-size:0.7rem;color:rgba(255,255,255,0.8);font-weight:500;letter-spacing:0.3px;">Cheque Entry</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <span class="nav-user" id="navUser3">👤</span>
+      <button class="btn btn-logout" onclick="openOverlay('bankMasterModal')" title="Manage Banks">🏛️ Banks</button>
+      <button class="btn btn-logout" onclick="showPage('dashPage');loadCustomers()">← Bills</button>
+      <button class="btn btn-logout" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="wrap">
+    <!-- CHEQUE STATS -->
+    <div class="stats" style="margin-bottom:16px;">
+      <div class="stat-card" style="border-left-color:#1565c0;"><div class="stat-label">Total Cheques</div><div class="stat-val" id="cqTotal" style="color:#1565c0;">0</div></div>
+      <div class="stat-card" style="border-left-color:#1565c0;"><div class="stat-label">Total Amount</div><div class="stat-val" id="cqAmt" style="color:#1565c0;">₹0</div></div>
+      <div class="stat-card" style="border-left-color:#e65100;"><div class="stat-label">Pending Clearance</div><div class="stat-val" id="cqPending" style="color:#e65100;">0</div></div>
+    </div>
+
+    <!-- CHEQUE SUB-TABS -->
+    <div class="ctabs">
+      <button class="ctab-btn active" id="ctab_date" onclick="switchCTab('date')">📅 Date Wise</button>
+      <button class="ctab-btn" id="ctab_customer" onclick="switchCTab('customer')">👤 Customer Wise</button>
+      <button class="ctab-btn" id="ctab_history" onclick="switchCTab('history')">📜 Cleared History</button>
+    </div>
+
+    <!-- ── DATE WISE TAB (entry + list) ── -->
+    <div id="cTabDate" class="tab-panel active">
+      <!-- QUICK ADD CHEQUE BAR -->
+      <div class="cheque-add-bar">
+        <div style="font-family:'Baloo 2',sans-serif;font-size:1rem;font-weight:700;color:#0d47a1;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+          ➕ Add Cheque Received
+          <span id="cqSaveInd" style="font-size:.78rem;font-weight:600;color:#1565c0;margin-left:10px;opacity:0;transition:opacity .4s;"></span>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px;">
+            <label style="font-size:.73rem;font-weight:700;color:#1565c0;text-transform:uppercase;letter-spacing:.4px;">Cheque Date *</label>
+            <input type="date" id="cqDate" style="padding:10px 12px;border:2px solid #bbdefb;border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;background:white;color:var(--text);"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:2;min-width:160px;">
+            <label style="font-size:.73rem;font-weight:700;color:#1565c0;text-transform:uppercase;letter-spacing:.4px;">Customer *</label>
+            <div style="position:relative;">
+              <input type="text" id="cqCustSearch" placeholder="🔍 Type to search customer..." autocomplete="off"
+                style="width:100%;padding:10px 12px;border:2px solid #bbdefb;border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;color:var(--text);"
+                oninput="showCqDropdown()"/>
+              <input type="hidden" id="cqCust"/>
+              <div id="cqCustDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:2px solid #bbdefb;border-radius:9px;max-height:200px;overflow-y:auto;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:2;min-width:150px;">
+            <label style="font-size:.73rem;font-weight:700;color:#1565c0;text-transform:uppercase;letter-spacing:.4px;">Bank *</label>
+            <select id="cqBank" style="width:100%;padding:10px 12px;border:2px solid #bbdefb;border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;background:white;color:var(--text);"><option value="">-- Select Bank --</option></select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px;">
+            <label style="font-size:.73rem;font-weight:700;color:#1565c0;text-transform:uppercase;letter-spacing:.4px;">Cheque No *</label>
+            <input type="text" id="cqNo" placeholder="e.g. 123456" autocomplete="off" style="padding:10px 12px;border:2px solid #bbdefb;border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;background:white;color:var(--text);"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px;">
+            <label style="font-size:.73rem;font-weight:700;color:#1565c0;text-transform:uppercase;letter-spacing:.4px;">Amount (₹) *</label>
+            <input type="number" id="cqAmt2" placeholder="e.g. 50000" min="1" autocomplete="off" style="padding:10px 12px;border:2px solid #bbdefb;border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;background:white;color:var(--text);"/>
+          </div>
+          <button class="btn btn-blue" style="padding:10px 22px;font-size:.92rem;white-space:nowrap;align-self:flex-end;" onclick="quickAddCheque()">✅ Add Cheque</button>
+        </div>
+      </div>
+
+      <!-- FILTER BAR -->
+      <div class="filter-bar" style="margin-bottom:14px;">
+        <input type="text" id="cqSearch" placeholder="🔍 Search customer / bank / cheque no..." oninput="filterCheques()" style="min-width:220px;"/>
+        <input type="date" id="cqFrom" onchange="filterCheques()" title="From date"/>
+        <input type="date" id="cqTo" onchange="filterCheques()" title="To date"/>
+        <button class="btn btn-outline btn-sm" onclick="clearCqFilter()">Clear</button>
+        <button class="btn btn-sm" style="background:#1b5e20;color:white;" onclick="exportDateWiseExcel()">⬇️ Export to Excel</button>
+      </div>
+
+      <div id="cqDateBody">
+        <div class="empty"><div class="ei">⏳</div>Loading...</div>
+      </div>
+    </div>
+
+    <!-- ── CUSTOMER WISE TAB (read-only summary) ── -->
+    <div id="cTabCustomer" class="tab-panel">
+      <div class="sec-head">
+        <div class="sec-title">👤 Customer Wise Cheque Totals</div>
+        <button class="btn btn-sm" style="background:#1565c0;color:white;" onclick="exportCustomerWiseExcel()">⬇️ Export to Excel</button>
+      </div>
+      <!-- Search box OUTSIDE the table so it is never re-rendered and destroyed -->
+      <div style="margin-bottom:10px;">
+        <input class="cust-search-input" id="cqCustSearch" placeholder="🔍 Search customer..." oninput="filterCqCustomer()" style="max-width:320px;padding:10px 14px;"/>
+      </div>
+      <div class="cust-table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:70px;background:#1565c0;">S.NO</th>
+            <th style="text-align:left;background:#1565c0;">CUSTOMER NAME</th>
+            <th style="background:#1565c0;">NO. OF CHEQUES</th>
+            <th style="background:#1565c0;">TOTAL AMOUNT</th>
+            <th style="background:#1565c0;">PENDING CLEARANCE</th>
+          </tr></thead>
+          <tbody id="cqCustBody"><tr><td colspan="5"><div class="empty"><div class="ei">⏳</div>Loading...</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── CLEARED HISTORY TAB ── -->
+    <div id="cTabHistory" class="tab-panel">
+      <div class="sec-head">
+        <div class="sec-title">📜 Cleared Cheques History</div>
+        <button class="btn btn-outline btn-sm" onclick="loadCheques()">🔄 Refresh</button>
+      </div>
+      <div class="filter-bar">
+        <input type="text" id="cqHistSearch" placeholder="🔍 Search..." oninput="filterCqHistory()"/>
+        <input type="date" id="cqHistFrom" onchange="filterCqHistory()"/>
+        <input type="date" id="cqHistTo" onchange="filterCqHistory()"/>
+        <button class="btn btn-outline btn-sm" onclick="clearCqHistFilter()">Clear</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>S.No</th><th>Cheque Date</th><th>Cleared Date</th><th>Customer</th><th>Bank</th><th>Cheque No</th><th>Amount</th></tr></thead>
+          <tbody id="cqHistBody"><tr><td colspan="7"><div class="empty"><div class="ei">📜</div>No cleared cheques yet.</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BANK MASTER MODAL -->
+<div class="overlay" id="bankMasterModal">
+  <div class="modal" style="max-width:500px;">
+    <h3>🏛️ Bank Master</h3>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <input type="text" id="newBankName" placeholder="e.g. SBI, HDFC, ICICI..." style="flex:1;padding:10px 13px;border:2px solid var(--border);border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;" onkeydown="if(event.key==='Enter')addBank()"/>
+      <button class="btn btn-blue" onclick="addBank()">+ Add Bank</button>
+    </div>
+    <div class="tbl-wrap" style="max-height:300px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>S.No</th><th>Bank Name</th><th>Action</th></tr></thead>
+        <tbody id="bankListBody"><tr><td colspan="3"><div class="empty" style="padding:20px;">No banks added yet.</div></td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('bankMasterModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT CHEQUE MODAL -->
+<div class="overlay" id="editChequeModal">
+  <div class="modal">
+    <h3>✏️ Edit Cheque</h3>
+    <input type="hidden" id="eCqId"/>
+    <div class="form-group"><label>Cheque Date *</label><input type="date" id="eCqDate"/></div>
+    <div class="form-group"><label>Customer *</label><select id="eCqCust"><option value="">-- Select --</option></select></div>
+    <div class="form-group"><label>Bank *</label><select id="eCqBank"><option value="">-- Select --</option></select></div>
+    <div class="form-group"><label>Cheque No *</label><input type="text" id="eCqNo"/></div>
+    <div class="form-group"><label>Amount (₹) *</label><input type="number" id="eCqAmt" min="0"/></div>
+    <div class="form-group"><label>Status</label>
+      <select id="eCqStatus">
+        <option value="pending">Pending</option>
+        <option value="cleared">Cleared</option>
+        <option value="bounced">Bounced</option>
+      </select>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeOverlay('editChequeModal')">Cancel</button>
+      <button class="btn btn-blue" onclick="updateCheque()">Update</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════
+// SUPABASE SETUP
+// ═══════════════════════════════════════
+const SUPA_URL = 'https://qqxytktebllfboiiewxv.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxeHl0a3RlYmxsZmJvaWlld3h2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMTgxMDIsImV4cCI6MjA5Mjc5NDEwMn0.YXpb8tersuMrc9scCOwl4A4hBuF77Ln81_T9a76aSVc';
+const { createClient } = supabase;
+const sb = createClient(SUPA_URL, SUPA_KEY);
+
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+let CUR_USER = null;
+let CUR_CUST_ID = null;
+let CUR_CUST_NAME = '';
+let ALL_CUSTS = [];
+let ALL_BILLS = [];
+let ALL_HIST = [];
+let CUR_TAB = 'pending';
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  // Simple local session using sessionStorage
+  const savedUser = sessionStorage.getItem('rsm_user');
+  if (savedUser) {
+    CUR_USER = JSON.parse(savedUser);
+    setNavUser(CUR_USER.username);
+    showPage('dashPage');
+    loadCustomers();
+  } else {
+    showPage('loginPage');
+  }
+
+  document.getElementById('loginPass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('loginEmail').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('qaAmt').addEventListener('keydown', e => { if(e.key==='Enter') quickAddBill(); });
+  document.getElementById('qaRef').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('qaAmt').focus(); });
+  document.getElementById('cqAmt2').addEventListener('keydown', e => { if(e.key==='Enter') quickAddCheque(); });
+});
+
+// ═══════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════
+function switchTab(tab) {
+  CUR_TAB = tab;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    b.classList.toggle('active', (i===0 && tab==='pending') || (i===1 && tab==='history'));
+  });
+  document.getElementById('tabPending').classList.toggle('active', tab==='pending');
+  document.getElementById('tabHistory').classList.toggle('active', tab==='history');
+  if (tab==='history') loadPaidHistory();
+}
+
+// ═══════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════
+async function doLogin() {
+  const username = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value.trim();
+  if (!username || !pass) { showLoginErr('Enter username and password'); return; }
+
+  const btn = document.getElementById('loginBtn');
+  btn.innerHTML = '<span class="spin"></span> Logging in...';
+  btn.disabled = true;
+
+  // Hardcoded credentials
+  if (username !== 'RSM' || pass !== '626001') {
+    btn.innerHTML = 'Login →';
+    btn.disabled = false;
+    showLoginErr('Invalid username or password');
+    return;
+  }
+
+  btn.innerHTML = 'Login →';
+  btn.disabled = false;
+
+  CUR_USER = { username: 'RSM' };
+  sessionStorage.setItem('rsm_user', JSON.stringify(CUR_USER));
+  setNavUser('RSM');
+  showPage('dashPage');
+  loadCustomers();
+}
+
+// Registration removed - using hardcoded login
+
+function doLogout() {
+  CUR_USER = null;
+  sessionStorage.removeItem('rsm_user');
+  showPage('loginPage');
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPass').value = '';
+}
+
+function setNavUser(username) {
+  const u = '👤 ' + username;
+  document.getElementById('navUser').textContent = u;
+  document.getElementById('navUser2').textContent = u;
+  const n3 = document.getElementById('navUser3');
+  if (n3) n3.textContent = u;
+}
+
+// ═══════════════════════════════════════
+// CUSTOMERS
+// ═══════════════════════════════════════
+async function loadCustomers() {
+  const { data: custs, error } = await sb.from('customers').select('*').order('name');
+  if (error) { toast(error.message,'fail'); return; }
+
+  // Fetch ALL bills with no status filter and no row limit
+  // This avoids the Supabase 1000-row default cap and status mismatch issues
+  let allBills = [];
+  let from = 0;
+  const batchSize = 1000;
+  while (true) {
+    const { data: batch, error: berr } = await sb.from('bills')
+      .select('customer_id,pending_amount,status')
+      .range(from, from + batchSize - 1);
+    if (berr || !batch || batch.length === 0) break;
+    allBills = allBills.concat(batch);
+    if (batch.length < batchSize) break;
+    from += batchSize;
+  }
+
+  ALL_CUSTS = custs.map(c => {
+    // A bill is "pending" if pending_amount > 0, regardless of status label
+    const cb = allBills.filter(b => b.customer_id === c.id && Number(b.pending_amount) > 0);
+    return { ...c, bill_count: cb.length, total_pending: cb.reduce((s,b)=>s+Number(b.pending_amount),0) };
+  });
+
+  renderCustomers(ALL_CUSTS);
+  updateSyncTime();
+  populateCqDropdowns();
+}
+
+function renderCustomers(list) {
+  const tb = list.reduce((s,c)=>s+(c.bill_count||0),0);
+  const ta = list.reduce((s,c)=>s+(c.total_pending||0),0);
+  // Stats always show full data (not filtered)
+  const fullTb = ALL_CUSTS.reduce((s,c)=>s+(c.bill_count||0),0);
+  const fullTa = ALL_CUSTS.reduce((s,c)=>s+(c.total_pending||0),0);
+  document.getElementById('sTotalC').textContent = ALL_CUSTS.length;
+  document.getElementById('sTotalB').textContent = fullTb;
+  document.getElementById('sTotalA').textContent = '₹'+fmt(fullTa);
+
+  const tbody = document.getElementById('custBody');
+  if (!list.length) {
+    tbody.innerHTML='<tr><td colspan="5"><div class="empty"><div class="ei">📋</div>No customers yet. Click "+ Add Customer"!</div></td></tr>';
+    return;
+  }
+
+  let h = `<tr class="subtotal-row">
+    <td></td>
+    <td><strong>GRAND TOTAL</strong></td>
+    <td><strong>${tb.toLocaleString('en-IN')}</strong></td>
+    <td style="text-align:right;"><strong>₹${fmt(ta)}</strong></td>
+    <td></td>
+  </tr>`;
+
+  list.forEach((c,i) => {
+    h += `<tr>
+      <td>${i+1}</td>
+      <td><span class="clink" onclick="openCust(${c.id},'${esc(c.name)}')">👤 ${esc(c.name)}</span></td>
+      <td>${(c.bill_count||0).toLocaleString('en-IN')}</td>
+      <td>₹${fmt(c.total_pending||0)}</td>
+      <td style="text-align:center;">
+        <div style="display:flex;gap:5px;flex-wrap:nowrap;justify-content:center;align-items:center;">
+          <button class="btn btn-outline btn-sm" style="white-space:nowrap;" onclick="openEditCust(${c.id},'${esc(c.name)}')">✏️ Edit</button>
+          <button class="btn btn-red btn-sm" style="white-space:nowrap;" onclick="delCustomer(${c.id},'${esc(c.name)}')">🗑️ Del</button>
+        </div>
+      </td>
+    </tr>`;
+  });
+
+  // Grand Total row at bottom
+  h += `<tr class="grand-row">
+    <td></td>
+    <td style="text-align:right;font-weight:800;">Grand Total</td>
+    <td><strong>${tb.toLocaleString('en-IN')}</strong></td>
+    <td style="text-align:right;"><strong>₹${fmt(ta)}</strong></td>
+    <td></td>
+  </tr>`;
+
+  tbody.innerHTML = h;
+}
+
+function filterC() {
+  const q = document.getElementById('custSearch').value.toLowerCase();
+  renderCustomers(ALL_CUSTS.filter(c=>c.name.toLowerCase().includes(q)));
+}
+
+async function addCustomer() {
+  const name = document.getElementById('newCName').value.trim();
+  if (!name) { toast('Enter customer name','fail'); return; }
+  const { error } = await sb.from('customers').insert({ name });
+  if (error) { toast(error.message,'fail'); return; }
+  closeOverlay('addCustModal');
+  document.getElementById('newCName').value = '';
+  toast('✅ Customer added!','ok');
+  loadCustomers();
+}
+
+function openEditCust(id, name) {
+  document.getElementById('editCId').value = id;
+  document.getElementById('editCName').value = name;
+  openOverlay('editCustModal');
+}
+
+async function updateCustomer() {
+  const id = document.getElementById('editCId').value;
+  const name = document.getElementById('editCName').value.trim();
+  if (!name) { toast('Enter name','fail'); return; }
+  const { error } = await sb.from('customers').update({ name }).eq('id', id);
+  if (error) { toast(error.message,'fail'); return; }
+  closeOverlay('editCustModal');
+  toast('✅ Updated!','ok');
+  loadCustomers();
+}
+
+async function delCustomer(id, name) {
+  if (!confirm(`⚠️ DELETE "${name}"?\n\nAll their bills will also be deleted!\nThis cannot be undone.`)) return;
+  await sb.from('bills').delete().eq('customer_id', id);
+  await sb.from('customers').delete().eq('id', id);
+  toast('🗑️ Customer deleted','ok');
+  loadCustomers();
+}
+
+// ═══════════════════════════════════════
+// CUSTOMER DETAIL
+// ═══════════════════════════════════════
+function openCust(id, name) {
+  CUR_CUST_ID = id;
+  CUR_CUST_NAME = name;
+  document.getElementById('detName').textContent = name;
+  document.getElementById('qaAmt').value = '';
+  BILL_PAGE = 1;
+  showPage('detPage');
+  loadBills();
+  // Focus Amount for fast entry
+  setTimeout(() => document.getElementById('qaAmt').focus(), 120);
+}
+
+function goCheque() {
+  showPage('chequePage');
+  loadCheques();
+  loadBanks();
+  populateCqDropdowns();
+}
+
+function goBack() { showPage('dashPage'); loadCustomers(); }
+
+async function loadBills() {
+  // Fetch ALL bills for this customer (no status filter) then show only those with pending amount > 0
+  const { data, error } = await sb.from('bills')
+    .select('*').eq('customer_id', CUR_CUST_ID)
+    .order('bill_date', { ascending: true }).order('id', { ascending: true });
+  if (error) { toast(error.message,'fail'); return; }
+  // Only show bills that still have money pending
+  // Sort stably: bill_date ASC, then id ASC — guarantees consistent order every load
+  const pendingBills = (data||[])
+    .filter(b => Number(b.pending_amount) > 0)
+    .sort((a, b) => {
+      const da = (a.bill_date||''), db = (b.bill_date||'');
+      if (da !== db) return da < db ? -1 : 1;
+      return (a.id||0) - (b.id||0);
+    });
+  ALL_BILLS = pendingBills;
+  renderBills(pendingBills);
+}
+
+function isNew(d) {
+  return (Date.now() - new Date(d).getTime()) / 86400000 <= 7;
+}
+
+let BILL_PAGE = 1;
+const BILL_PAGE_SIZE = 50;
+let BILL_SHOW_ALL = false;
+
+function renderBills(list) {
+  const total = list.reduce((s,b)=>s+Number(b.pending_amount),0);
+  document.getElementById('detTotal').textContent = '₹'+fmt(total);
+  document.getElementById('chkAll').checked = false;
+  updateSelBar();
+
+  // Bill count badge
+  const cb = document.getElementById('billCountBadge');
+  if (cb) cb.textContent = list.length ? `(${list.length} bill${list.length>1?'s':''})` : '';
+
+  const tbody = document.getElementById('billBody');
+  if (!list.length) {
+    tbody.innerHTML='<tr><td colspan="6"><div class="empty"><div class="ei">📄</div>No pending bills! All clear ✅</div></td></tr>';
+    document.getElementById('billPager').innerHTML='';
+    return;
+  }
+
+  // Pagination
+  const totalPages = Math.ceil(list.length / BILL_PAGE_SIZE);
+  if (BILL_PAGE > totalPages) BILL_PAGE = totalPages;
+  const start = (BILL_PAGE - 1) * BILL_PAGE_SIZE;
+  const pageList = BILL_SHOW_ALL ? list : list.slice(start, start + BILL_PAGE_SIZE);
+
+  let h = '';
+  pageList.forEach((b,i) => {
+    const partial = b.status === 'partial';
+    const newb = isNew(b.created_at);
+    const rc = partial ? 'row-partial' : newb ? 'row-new' : '';
+    const badge = partial
+      ? '<span class="badge badge-partial">🔴 Partial</span>'
+      : newb ? '<span class="badge badge-new">🟢 New</span>'
+      : '<span class="badge badge-pending">Pending</span>';
+    const dateStr = b.bill_date ? b.bill_date.split('T')[0] : '';
+    const globalIdx = start + i;
+    h += `<tr class="${rc}" draggable="true" data-id="${b.id}" data-idx="${globalIdx}">
+      <td style="text-align:center;"><span class="drag-handle" title="Drag to reorder">⠿</span></td>
+      <td><input type="checkbox" class="bchk" value="${b.id}" onchange="updateSelBar()"/></td>
+      <td>${start+i+1}</td>
+      <td>${fmtDate(b.bill_date)}</td>
+      <td><strong>₹${fmt(b.pending_amount)}</strong></td>
+      <td>${badge}</td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap;">
+        <button class="btn btn-green btn-sm" onclick="openPay(${b.id},${b.pending_amount})">💰 Pay</button>
+        <button class="btn btn-outline btn-sm" onclick="openEditBill(${b.id},'${dateStr}',${b.pending_amount})">✏️</button>
+        <button class="btn btn-red btn-sm" onclick="delBill(${b.id})">🗑️</button>
+      </td>
+    </tr>`;
+  });
+  tbody.innerHTML = h;
+  initDragDrop();
+
+  // Render pager
+  const pager = document.getElementById('billPager');
+  if (totalPages <= 1) { pager.innerHTML=''; return; }
+  let pg = `<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#f4faf4;border-top:1px solid #edf2ed;font-size:.85rem;flex-wrap:wrap;">`;
+  pg += `<span style="color:var(--muted);font-weight:600;">Page ${BILL_PAGE} of ${totalPages} &nbsp;|&nbsp; Showing ${start+1}–${Math.min(start+BILL_PAGE_SIZE,list.length)} of ${list.length} bills</span>`;
+  pg += `<div style="margin-left:auto;display:flex;gap:6px;">`;
+  if (BILL_PAGE > 1) pg += `<button class="btn btn-outline btn-sm" onclick="goBillPage(${BILL_PAGE-1})">← Prev</button>`;
+  // Page number buttons (show up to 5)
+  const pStart = Math.max(1, BILL_PAGE-2), pEnd = Math.min(totalPages, pStart+4);
+  for (let p=pStart;p<=pEnd;p++) {
+    pg += `<button class="btn btn-sm" style="${p===BILL_PAGE?'background:var(--g2);color:white;':'background:white;border:2px solid var(--border);color:var(--text);'}" onclick="goBillPage(${p})">${p}</button>`;
+  }
+  if (BILL_PAGE < totalPages) pg += `<button class="btn btn-outline btn-sm" onclick="goBillPage(${BILL_PAGE+1})">Next →</button>`;
+  pg += `</div></div>`;
+  pager.innerHTML = pg;
+}
+
+function goBillPage(p) {
+  BILL_PAGE = p;
+  renderBills(ALL_BILLS);
+  document.getElementById('billBody').closest('.tbl-wrap').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// ═══════════════════════════════════════
+// PAID BILLS HISTORY
+// ═══════════════════════════════════════
+async function loadPaidHistory() {
+  document.getElementById('histBody').innerHTML =
+    '<tr><td colspan="5"><div class="empty"><div class="ei">⏳</div>Loading...</div></td></tr>';
+
+  // Get all payments with bill and customer info
+  const { data: payments, error } = await sb.from('payments')
+    .select('id, amount_paid, paid_at, bill_id, bills(ref_no, customer_id, customers(name))')
+    .order('paid_at', { ascending: false });
+
+  if (error) { toast(error.message,'fail'); return; }
+
+  ALL_HIST = (payments||[]).map(p => ({
+    id: p.id,
+    paid_at: p.paid_at,
+    amount_paid: p.amount_paid,
+    ref_no: p.bills?.ref_no || '-',
+    customer_name: p.bills?.customers?.name || 'Unknown'
+  }));
+
+  renderHistory(ALL_HIST);
+}
+
+function renderHistory(list) {
+  const tbody = document.getElementById('histBody');
+  if (!list.length) {
+    tbody.innerHTML='<tr><td colspan="5"><div class="empty"><div class="ei">📜</div>No payment history yet.</div></td></tr>';
+    return;
+  }
+
+  const total = list.reduce((s,p)=>s+Number(p.amount_paid),0);
+  let h = `<tr class="total-row"><td></td><td></td><td><strong>TOTAL</strong></td><td></td><td><strong>₹${fmt(total)}</strong></td></tr>`;
+  list.forEach((p,i) => {
+    h += `<tr>
+      <td>${i+1}</td>
+      <td>${fmtDate(p.paid_at)}</td>
+      <td>${esc(p.customer_name)}</td>
+      <td>${esc(p.ref_no)}</td>
+      <td><strong>₹${fmt(p.amount_paid)}</strong></td>
+    </tr>`;
+  });
+  tbody.innerHTML = h;
+}
+
+function filterHistory() {
+  const q = document.getElementById('histSearch').value.toLowerCase();
+  const from = document.getElementById('histFrom').value;
+  const to = document.getElementById('histTo').value;
+
+  let filtered = ALL_HIST.filter(p => {
+    const matchName = p.customer_name.toLowerCase().includes(q);
+    const pDate = p.paid_at ? p.paid_at.split('T')[0] : '';
+    const afterFrom = !from || pDate >= from;
+    const beforeTo = !to || pDate <= to;
+    return matchName && afterFrom && beforeTo;
+  });
+
+  renderHistory(filtered);
+}
+
+function clearHistFilter() {
+  document.getElementById('histSearch').value = '';
+  document.getElementById('histFrom').value = '';
+  document.getElementById('histTo').value = '';
+  renderHistory(ALL_HIST);
+}
+
+// ═══════════════════════════════════════
+// MULTI SELECT
+// ═══════════════════════════════════════
+function toggleAll(cb) {
+  document.querySelectorAll('.bchk').forEach(c=>c.checked=cb.checked);
+  updateSelBar();
+}
+function updateSelBar() {
+  const checked = document.querySelectorAll('.bchk:checked');
+  document.getElementById('selCount').textContent = checked.length + ' bill(s) selected';
+  document.getElementById('selBar').classList.toggle('show', checked.length > 0);
+}
+function clearSel() {
+  document.querySelectorAll('.bchk').forEach(c=>c.checked=false);
+  document.getElementById('chkAll').checked = false;
+  updateSelBar();
+}
+async function paySelected() {
+  const ids = [...document.querySelectorAll('.bchk:checked')].map(c=>parseInt(c.value));
+  if (!ids.length) return;
+  if (!confirm(`✅ Mark ${ids.length} bill(s) as FULLY PAID?\nPayment will be saved to history.`)) return;
+  for (const id of ids) {
+    const bill = ALL_BILLS.find(b=>b.id===id);
+    if (bill) {
+      await sb.from('bills').update({ pending_amount:0, status:'paid' }).eq('id',id);
+      await sb.from('payments').insert({ bill_id:id, amount_paid:bill.pending_amount });
+    }
+  }
+  toast(`✅ ${ids.length} bill(s) marked as paid!`,'ok');
+  loadBills(); loadCustomers();
+}
+
+// ═══════════════════════════════════════
+// BACKUP — Download full CSV
+// ═══════════════════════════════════════
+async function downloadBackup() {
+  const btn = document.getElementById('backupBtn');
+  btn.innerHTML = '⏳ Exporting...';
+  btn.disabled = true;
+  try {
+    // Fetch all data
+    const { data: custs } = await sb.from('customers').select('*').order('name');
+    const { data: bills } = await sb.from('bills').select('*').order('bill_date', { ascending: false });
+    const { data: payments } = await sb.from('payments').select('*,bills(ref_no,bill_date,customers(name))').order('paid_at', { ascending: false });
+    const { data: banks } = await sb.from('banks').select('*').order('name');
+    const { data: cheques } = await sb.from('cheques').select('*,customers(name),banks(name)').order('cheque_date', { ascending: false });
+
+    const now = new Date();
+    const stamp = now.toISOString().slice(0,10);
+    const timeStr = now.toLocaleString('en-IN');
+
+    // Build CSV sections
+    let csv = `RSM Bills - Full Data Backup\nExported on: ${timeStr}\n\n`;
+
+    // CUSTOMERS
+    csv += '=== CUSTOMERS ===\n';
+    csv += 'S.No,Customer ID,Customer Name\n';
+    (custs||[]).forEach((c,i) => {
+      csv += `${i+1},${c.id},"${(c.name||'').replace(/"/g,'""')}"\n`;
+    });
+
+    // BILLS
+    csv += '\n=== BILLS (PENDING) ===\n';
+    csv += 'S.No,Bill ID,Customer ID,Customer Name,Ref No,Bill Date,Original Amount,Pending Amount,Status\n';
+    const custMap = {};
+    (custs||[]).forEach(c => custMap[c.id] = c.name);
+    (bills||[]).forEach((b,i) => {
+      csv += `${i+1},${b.id},${b.customer_id},"${(custMap[b.customer_id]||'').replace(/"/g,'""')}","${(b.ref_no||'').replace(/"/g,'""')}",${b.bill_date||''},${b.original_amount||0},${b.pending_amount||0},${b.status||''}\n`;
+    });
+
+    // PAYMENTS
+    csv += '\n=== PAYMENT HISTORY ===\n';
+    csv += 'S.No,Payment ID,Bill ID,Customer Name,Ref No,Bill Date,Amount Paid,Paid At\n';
+    (payments||[]).forEach((p,i) => {
+      const cname = p.bills?.customers?.name || '';
+      const ref = p.bills?.ref_no || '';
+      const bdate = p.bills?.bill_date || '';
+      csv += `${i+1},${p.id},${p.bill_id},"${cname.replace(/"/g,'""')}","${ref.replace(/"/g,'""')}",${bdate},${p.amount_paid||0},${(p.paid_at||'').replace('T',' ').slice(0,19)}\n`;
+    });
+
+    // BANKS
+    csv += '\n=== BANKS ===\n';
+    csv += 'S.No,Bank ID,Bank Name\n';
+    (banks||[]).forEach((b,i) => {
+      csv += `${i+1},${b.id},"${(b.name||'').replace(/"/g,'""')}"\n`;
+    });
+
+    // CHEQUES
+    csv += '\n=== CHEQUES ===\n';
+    csv += 'S.No,Cheque ID,Cheque Date,Customer Name,Bank Name,Cheque No,Amount,Status,Cleared Date\n';
+    (cheques||[]).forEach((c,i) => {
+      csv += `${i+1},${c.id},${c.cheque_date||''},"${(c.customers?.name||'').replace(/"/g,'""')}","${(c.banks?.name||'').replace(/"/g,'""')}","${(c.cheque_no||'').replace(/"/g,'""')}",${c.amount||0},${c.status||''},${c.cleared_at||''}\n`;
+    });
+
+    // Download
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `RSM_Bills_Backup_${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast(`✅ Backup downloaded: RSM_Bills_Backup_${stamp}.csv`, 'ok');
+  } catch(err) {
+    toast('❌ Backup failed: ' + err.message, 'fail');
+  }
+  btn.innerHTML = '📥 Backup';
+  btn.disabled = false;
+}
+
+function updateSyncTime() {
+  const el = document.getElementById('lastSyncTime');
+  if (el) el.textContent = '🔄 Last synced: ' + new Date().toLocaleTimeString('en-IN');
+}
+
+
+async function quickAddBill() {
+  const date = new Date().toISOString().split('T')[0];
+  const amt = parseFloat(document.getElementById('qaAmt').value);
+  if (isNaN(amt) || amt <= 0) {
+    toast('Enter a valid Amount', 'fail'); return;
+  }
+  const btn = document.querySelector('.qa-btn');
+  btn.disabled = true; btn.textContent = '⏳ Saving...';
+  const { error } = await sb.from('bills').insert({
+    customer_id: CUR_CUST_ID, invoice_no: '-', ref_no: '-',
+    bill_date: date, original_amount: amt, pending_amount: amt, status: 'pending'
+  });
+  btn.disabled = false; btn.textContent = '✅ Add Bill';
+  if (error) { toast(error.message, 'fail'); return; }
+  // Show inline save confirmation
+  const ind = document.getElementById('qaSaveInd');
+  ind.textContent = '✔ Saved! Add next bill';
+  ind.style.opacity = '1';
+  setTimeout(() => ind.style.opacity = '0', 2500);
+  // Reset fields
+  document.getElementById('qaAmt').value = '';
+  document.getElementById('qaAmt').focus();
+  toast('✅ Bill added!', 'ok');
+  clearBillSearch();
+  await loadBills();
+  loadCustomers(); updateSyncTime();
+}
+
+// ═══════════════════════════════════════
+// BILLS CRUD
+// ═══════════════════════════════════════
+async function addBill() {
+  const date = document.getElementById('nDate').value;
+  const amt = parseFloat(document.getElementById('nAmt').value);
+  if (!date||isNaN(amt)||amt<=0) { toast('Fill Date and Amount','fail'); return; }
+  const { error } = await sb.from('bills').insert({
+    customer_id:CUR_CUST_ID, invoice_no: '-', ref_no: '-',
+    bill_date:date, original_amount:amt, pending_amount:amt, status:'pending'
+  });
+  if (error) { toast(error.message,'fail'); return; }
+  closeOverlay('addBillModal');
+  document.getElementById('nAmt').value='';
+  toast('✅ Bill added!','ok');
+  clearBillSearch();
+  await loadBills();
+  loadCustomers();
+}
+
+function openEditBill(id,date,amt) {
+  document.getElementById('eBId').value=id;
+  document.getElementById('eDate').value=date;
+  document.getElementById('eAmt').value=amt;
+  openOverlay('editBillModal');
+}
+
+async function updateBill() {
+  const id=document.getElementById('eBId').value;
+  const date=document.getElementById('eDate').value;
+  const amt=parseFloat(document.getElementById('eAmt').value);
+  if (!date||isNaN(amt)) { toast('Fill all fields','fail'); return; }
+  const { error } = await sb.from('bills').update({ bill_date:date,pending_amount:amt }).eq('id',id);
+  if (error) { toast(error.message,'fail'); return; }
+  closeOverlay('editBillModal');
+  toast('✅ Bill updated!','ok');
+  loadBills(); loadCustomers();
+}
+
+function openPay(id, pending) {
+  document.getElementById('pBId').value=id;
+  document.getElementById('pPending').textContent='₹'+fmt(pending);
+  document.getElementById('pAmt').value='';
+  openOverlay('payModal');
+}
+
+async function submitPay() {
+  const id=parseInt(document.getElementById('pBId').value);
+  const amt=parseFloat(document.getElementById('pAmt').value);
+  if (isNaN(amt)||amt<=0) { toast('Enter valid amount','fail'); return; }
+  if (!confirm('Confirm payment of ₹'+fmt(amt)+'?\nThis will be saved permanently.')) return;
+  const bill = ALL_BILLS.find(b=>b.id===id);
+  if (!bill) return;
+  const newPending = Math.max(0, Number(bill.pending_amount) - amt);
+  const newStatus = newPending <= 0 ? 'paid' : 'partial';
+  await sb.from('bills').update({ pending_amount:newPending, status:newStatus }).eq('id',id);
+  await sb.from('payments').insert({ bill_id:id, amount_paid:amt });
+  closeOverlay('payModal');
+  if (newStatus === 'paid') {
+    ALL_BILLS = ALL_BILLS.filter(b => b.id !== id);
+    toast('✅ Bill fully paid! Saved to history.','ok');
+  } else {
+    bill.pending_amount = newPending;
+    bill.status = 'partial';
+    toast('✅ Partial payment saved! Bill stays in same position.','ok');
+  }
+  clearBillSearch();
+  loadCustomers();
+}
+
+
+async function delBill(id) {
+  if (!confirm('⚠️ DELETE this bill permanently?\nThis cannot be undone!')) return;
+  await sb.from('payments').delete().eq('bill_id',id);
+  await sb.from('bills').delete().eq('id',id);
+  toast('🗑️ Bill deleted','ok');
+  loadBills(); loadCustomers();
+}
+
+// ═══════════════════════════════════════
+// MODAL / OVERLAY
+// ═══════════════════════════════════════
+function openOverlay(id) {
+  document.getElementById(id).classList.add('open');
+  if (id==='addBillModal') document.getElementById('nDate').value=new Date().toISOString().split('T')[0];
+}
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+document.addEventListener('click', e => { if(e.target.classList.contains('overlay')) e.target.classList.remove('open'); });
+
+// ═══════════════════════════════════════
+// PAGES
+// ═══════════════════════════════════════
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ═══════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════
+let tTimer;
+function toast(msg, type='ok') {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast '+type+' show';
+  clearTimeout(tTimer);
+  tTimer=setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+// ═══════════════════════════════════════
+// CHEQUE MODULE
+// ═══════════════════════════════════════
+let ALL_CHEQUES = [];
+let ALL_BANKS   = [];
+let CUR_CTAB    = 'date';
+
+// ── Sub-tab switch ──
+function switchCTab(tab) {
+  CUR_CTAB = tab;
+  ['date','customer','history'].forEach(t => {
+    document.getElementById('ctab_'+t).classList.toggle('active', t===tab);
+    document.getElementById('cTab'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active', t===tab);
+  });
+  if (tab==='customer') renderCqCustomer();
+  if (tab==='history')  renderCqHistory(ALL_CHEQUES.filter(c=>c.status==='cleared'));
+}
+
+// ── Load Banks ──
+async function loadBanks() {
+  const { data, error } = await sb.from('banks').select('*').order('name');
+  if (error) { toast(error.message,'fail'); return; }
+  ALL_BANKS = data || [];
+  renderBankList();
+  populateCqDropdowns();
+}
+
+function renderBankList() {
+  const tb = document.getElementById('bankListBody');
+  if (!ALL_BANKS.length) {
+    tb.innerHTML='<tr><td colspan="3"><div class="empty" style="padding:20px;">No banks added yet.</div></td></tr>'; return;
+  }
+  tb.innerHTML = ALL_BANKS.map((b,i)=>`<tr>
+    <td>${i+1}</td><td>${esc(b.name)}</td>
+    <td><button class="btn btn-red btn-sm" onclick="delBank(${b.id},'${esc(b.name)}')">🗑️</button></td>
+  </tr>`).join('');
+}
+
+async function addBank() {
+  const name = document.getElementById('newBankName').value.trim();
+  if (!name) { toast('Enter bank name','fail'); return; }
+  const { error } = await sb.from('banks').insert({ name });
+  if (error) { toast(error.message,'fail'); return; }
+  document.getElementById('newBankName').value = '';
+  toast('✅ Bank added!','ok');
+  loadBanks();
+}
+
+async function delBank(id, name) {
+  if (!confirm(`Delete bank "${name}"?`)) return;
+  await sb.from('banks').delete().eq('id', id);
+  toast('🗑️ Bank deleted','ok');
+  loadBanks();
+}
+
+// ── Populate dropdowns ──
+function populateCqDropdowns() {
+  // Only populate eCqCust (edit modal still uses select)
+  const custSelects = ['eCqCust'];
+  const bankSelects = ['cqBank','eCqBank'];
+
+  custSelects.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">-- Select Customer --</option>' +
+      ALL_CUSTS.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    if (cur) el.value = cur;
+  });
+
+  bankSelects.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">-- Select Bank --</option>' +
+      ALL_BANKS.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    if (cur) el.value = cur;
+  });
+}
+
+// ── Load Cheques ──
+async function loadCheques() {
+  const { data, error } = await sb.from('cheques')
+    .select('*, customers(name), banks(name)')
+    .order('cheque_date', { ascending: false });
+  if (error) { toast(error.message,'fail'); return; }
+  ALL_CHEQUES = (data||[]).map(c=>({
+    ...c,
+    customer_name: c.customers?.name || '?',
+    bank_name: c.banks?.name || '?'
+  }));
+  renderCqStats();
+  renderCqDate(ALL_CHEQUES.filter(c=>c.status!=='cleared'));
+  if (CUR_CTAB==='customer') renderCqCustomer();
+  if (CUR_CTAB==='history')  renderCqHistory(ALL_CHEQUES.filter(c=>c.status==='cleared'));
+}
+
+// ── Stats ──
+function renderCqStats() {
+  const pending = ALL_CHEQUES.filter(c=>c.status==='pending');
+  document.getElementById('cqTotal').textContent   = pending.length;
+  document.getElementById('cqAmt').textContent     = '₹'+fmt(pending.reduce((s,c)=>s+Number(c.amount),0));
+  document.getElementById('cqPending').textContent = pending.length;
+}
+
+// ── Date Wise ──
+function renderCqDate(list) {
+  const container = document.getElementById('cqDateBody');
+  if (!list.length) {
+    container.innerHTML='<div class="empty"><div class="ei">🏦</div>No cheques found. Add one above!</div>'; return;
+  }
+
+  // Group by date
+  const grouped = {};
+  list.forEach(c => {
+    const d = c.cheque_date || 'Unknown';
+    if (!grouped[d]) grouped[d] = [];
+    grouped[d].push(c);
+  });
+
+  const dates = Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
+  let html = '';
+  dates.forEach(date => {
+    const rows = grouped[date];
+    const dayTotal = rows.reduce((s,c)=>s+Number(c.amount),0);
+    html += `<div class="cheque-date-group">
+      <div class="cheque-date-header">
+        <span>📅 ${fmtDate(date)}</span>
+        <span class="cheque-date-total">${rows.length} cheque${rows.length>1?'s':''} &nbsp;|&nbsp; ₹${fmt(dayTotal)}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead style="background:#e3f2fd;">
+          <tr>
+            <th style="padding:9px 12px;text-align:left;font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:#0d47a1;">S.No</th>
+            <th style="padding:9px 12px;text-align:left;font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:#0d47a1;">Customer</th>
+            <th style="padding:9px 12px;text-align:left;font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:#0d47a1;">Bank</th>
+            <th style="padding:9px 12px;text-align:left;font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:#0d47a1;">Cheque No</th>
+            <th style="padding:9px 12px;text-align:left;font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:#0d47a1;">Amount</th>
+            <th style="padding:9px 12px;text-align:left;font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:#0d47a1;">Status</th>
+            <th style="padding:9px 12px;text-align:left;font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:#0d47a1;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    rows.forEach((c,i) => {
+      const statusBadge = c.status==='cleared'
+        ? '<span class="badge badge-paid">✅ Cleared</span>'
+        : c.status==='bounced'
+        ? '<span class="badge badge-partial">❌ Bounced</span>'
+        : '<span class="badge badge-pending">⏳ Pending</span>';
+      html += `<tr style="border-bottom:1px solid #edf2ed;">
+        <td style="padding:10px 12px;">${i+1}</td>
+        <td style="padding:10px 12px;font-weight:700;">${esc(c.customer_name)}</td>
+        <td style="padding:10px 12px;">${esc(c.bank_name)}</td>
+        <td style="padding:10px 12px;">${esc(c.cheque_no||'-')}</td>
+        <td style="padding:10px 12px;"><strong>₹${fmt(c.amount)}</strong></td>
+        <td style="padding:10px 12px;">${statusBadge}</td>
+        <td style="padding:10px 12px;">
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            ${c.status==='pending'?`<button class="btn btn-green btn-sm" onclick="markChequeCleared(${c.id})">✅ Cleared</button>`:''}
+            <button class="btn btn-outline btn-sm" onclick="openEditCheque(${c.id})">✏️</button>
+            <button class="btn btn-red btn-sm" onclick="delCheque(${c.id})">🗑️</button>
+          </div>
+        </td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+  });
+  container.innerHTML = html;
+}
+
+// ── Filter date view ──
+function filterCheques() {
+  const q    = document.getElementById('cqSearch').value.toLowerCase();
+  const from = document.getElementById('cqFrom').value;
+  const to   = document.getElementById('cqTo').value;
+  const list = ALL_CHEQUES.filter(c => {
+    if (c.status==='cleared') return false;
+    const matchQ = c.customer_name.toLowerCase().includes(q)
+                || c.bank_name.toLowerCase().includes(q)
+                || (c.cheque_no||'').toLowerCase().includes(q);
+    const d = c.cheque_date||'';
+    return matchQ && (!from||d>=from) && (!to||d<=to);
+  });
+  renderCqDate(list);
+}
+function clearCqFilter() {
+  ['cqSearch','cqFrom','cqTo'].forEach(id=>document.getElementById(id).value='');
+  renderCqDate(ALL_CHEQUES.filter(c=>c.status!=='cleared'));
+}
+
+// ── Customer Wise ──
+let ALL_CQ_CUSTS_DISPLAY = [];
+function renderCqCustomer() {
+  const map = {};
+  // Only show PENDING cheques in customer wise view
+  ALL_CHEQUES.filter(c => c.status === 'pending').forEach(c => {
+    if (!map[c.customer_id]) map[c.customer_id]={name:c.customer_name,total:0,count:0,pending:0};
+    map[c.customer_id].total += Number(c.amount);
+    map[c.customer_id].count++;
+    map[c.customer_id].pending++;
+  });
+  ALL_CQ_CUSTS_DISPLAY = Object.values(map).sort((a,b)=>b.total-a.total);
+  renderCqCustTable(ALL_CQ_CUSTS_DISPLAY);
+}
+function renderCqCustTable(list) {
+  const tb = document.getElementById('cqCustBody');
+  if (!list.length) { tb.innerHTML='<tr><td colspan="5"><div class="empty"><div class="ei">👤</div>No data yet.</div></td></tr>'; return; }
+  const grandTotal = list.reduce((s,c)=>s+c.total,0);
+  const grandCount = list.reduce((s,c)=>s+c.count,0);
+
+  // Subtotal row at top
+  let h = `<tr class="subtotal-row">
+    <td></td>
+    <td><strong>GRAND TOTAL</strong></td>
+    <td><strong>${grandCount.toLocaleString('en-IN')}</strong></td>
+    <td><strong>₹${fmt(grandTotal)}</strong></td>
+    <td></td>
+  </tr>`;
+
+  list.forEach((c,i)=>{
+    h+=`<tr>
+      <td>${i+1}</td>
+      <td style="text-align:left;font-weight:700;">👤 ${esc(c.name)}</td>
+      <td>${c.count.toLocaleString('en-IN')}</td>
+      <td>₹${fmt(c.total)}</td>
+      <td>${c.pending>0?`<span class="badge badge-pending">${c.pending} Pending</span>`:'<span class="badge badge-paid">All Cleared</span>'}</td>
+    </tr>`;
+  });
+
+  // Grand Total row
+  h += `<tr class="grand-row">
+    <td></td>
+    <td style="text-align:right;"><strong>Grand Total</strong></td>
+    <td><strong>${grandCount.toLocaleString('en-IN')}</strong></td>
+    <td><strong>₹${fmt(grandTotal)}</strong></td>
+    <td></td>
+  </tr>`;
+
+  tb.innerHTML = h;
+}
+function filterCqCustomer() {
+  const q = document.getElementById('cqCustSearch').value.toLowerCase();
+  renderCqCustTable(ALL_CQ_CUSTS_DISPLAY.filter(c=>c.name.toLowerCase().includes(q)));
+}
+
+// ── Cleared History ──
+let ALL_CQ_HIST = [];
+function renderCqHistory(list) {
+  ALL_CQ_HIST = list;
+  renderCqHistTable(list);
+}
+function renderCqHistTable(list) {
+  const tb = document.getElementById('cqHistBody');
+  if (!list.length) { tb.innerHTML='<tr><td colspan="7"><div class="empty"><div class="ei">📜</div>No cleared cheques yet.</div></td></tr>'; return; }
+  const total = list.reduce((s,c)=>s+Number(c.amount),0);
+  let h = `<tr class="total-row"><td colspan="6"><strong>TOTAL</strong></td><td><strong>₹${fmt(total)}</strong></td></tr>`;
+  list.forEach((c,i)=>{
+    h+=`<tr>
+      <td>${i+1}</td>
+      <td>${fmtDate(c.cheque_date)}</td>
+      <td>${fmtDate(c.cleared_at)}</td>
+      <td>${esc(c.customer_name)}</td>
+      <td>${esc(c.bank_name)}</td>
+      <td>${esc(c.cheque_no||'-')}</td>
+      <td><strong>₹${fmt(c.amount)}</strong></td>
+    </tr>`;
+  });
+  tb.innerHTML = h;
+}
+function filterCqHistory() {
+  const q    = document.getElementById('cqHistSearch').value.toLowerCase();
+  const from = document.getElementById('cqHistFrom').value;
+  const to   = document.getElementById('cqHistTo').value;
+  const list = ALL_CQ_HIST.filter(c=>{
+    const matchQ = c.customer_name.toLowerCase().includes(q)||c.bank_name.toLowerCase().includes(q)||(c.cheque_no||'').toLowerCase().includes(q);
+    const d = c.cheque_date||'';
+    return matchQ&&(!from||d>=from)&&(!to||d<=to);
+  });
+  renderCqHistTable(list);
+}
+function clearCqHistFilter() {
+  ['cqHistSearch','cqHistFrom','cqHistTo'].forEach(id=>document.getElementById(id).value='');
+  renderCqHistory(ALL_CHEQUES.filter(c=>c.status==='cleared'));
+}
+
+// ── Quick Add Cheque ──
+async function quickAddCheque() {
+  const date    = document.getElementById('cqDate').value;
+  const custId  = document.getElementById('cqCust').value;
+  const bankId  = document.getElementById('cqBank').value;
+  const no      = document.getElementById('cqNo').value.trim();
+  const amt     = parseFloat(document.getElementById('cqAmt2').value);
+  if (!date) { toast('Select cheque date','fail'); return; }
+  // If hidden input empty, try to find customer by typed name
+  let finalCustId = custId;
+  if (!finalCustId) {
+    const typedName = document.getElementById('cqCustSearch').value.trim().toUpperCase();
+    const found = ALL_CUSTS.find(c => c.name.toUpperCase() === typedName);
+    if (found) { finalCustId = found.id; document.getElementById('cqCust').value = found.id; }
+    else { toast('Please select a customer from the dropdown list','fail'); return; }
+  }
+  if (!bankId) { toast('Select a bank','fail'); return; }
+  if (!no) { toast('Enter cheque number','fail'); return; }
+  if (isNaN(amt)||amt<=0) { toast('Enter valid amount','fail'); return;
+  }
+  const btn = document.querySelector('[onclick="quickAddCheque()"]');
+  if(btn){btn.disabled=true; btn.textContent='⏳ Saving...';}
+  console.log('Inserting cheque:', {date, finalCustId, bankId, no, amt});
+  const { error } = await sb.from('cheques').insert({
+    cheque_date: date, customer_id: parseInt(finalCustId), bank_id: parseInt(bankId),
+    cheque_no: no, amount: amt, status: 'pending'
+  });
+  console.log('Insert result error:', error);
+  if(btn){btn.disabled=false; btn.textContent='✅ Add Cheque';}
+  if (error) { toast(error.message,'fail'); return; }
+  const ind = document.getElementById('cqSaveInd');
+  ind.textContent='✔ Saved! Add next'; ind.style.opacity='1';
+  setTimeout(()=>ind.style.opacity='0', 2500);
+  document.getElementById('cqNo').value='';
+  document.getElementById('cqAmt2').value='';
+  document.getElementById('cqCust').value='';
+  document.getElementById('cqCustSearch').value='';
+  document.getElementById('cqNo').focus();
+  toast('✅ Cheque added!','ok');
+  loadCheques();
+}
+
+// ── Mark Cleared ──
+async function markChequeCleared(id) {
+  if (!confirm('Mark this cheque as CLEARED?')) return;
+  const today = new Date().toISOString().split('T')[0];
+  await sb.from('cheques').update({ status:'cleared', cleared_at: today }).eq('id',id);
+  toast('✅ Cheque marked cleared! Customer Wise updated.','ok');
+  await loadCheques();
+  // Auto switch to customer wise to show updated data
+  renderCqCustomer();
+}
+
+// ── Edit Cheque ──
+function openEditCheque(id) {
+  const c = ALL_CHEQUES.find(x=>x.id===id);
+  if (!c) return;
+  populateCqDropdowns();
+  document.getElementById('eCqId').value   = c.id;
+  document.getElementById('eCqDate').value = c.cheque_date||'';
+  document.getElementById('eCqCust').value = c.customer_id||'';
+  document.getElementById('eCqBank').value = c.bank_id||'';
+  document.getElementById('eCqNo').value   = c.cheque_no||'';
+  document.getElementById('eCqAmt').value  = c.amount||'';
+  document.getElementById('eCqStatus').value = c.status||'pending';
+  openOverlay('editChequeModal');
+}
+async function updateCheque() {
+  const id     = document.getElementById('eCqId').value;
+  const date   = document.getElementById('eCqDate').value;
+  const custId = document.getElementById('eCqCust').value;
+  const bankId = document.getElementById('eCqBank').value;
+  const no     = document.getElementById('eCqNo').value.trim();
+  const amt    = parseFloat(document.getElementById('eCqAmt').value);
+  const status = document.getElementById('eCqStatus').value;
+  if (!date||!custId||!bankId||!no||isNaN(amt)) { toast('Fill all fields','fail'); return; }
+  const updates = { cheque_date:date, customer_id:parseInt(custId), bank_id:parseInt(bankId),
+    cheque_no:no, amount:amt, status };
+  if (status==='cleared' && !ALL_CHEQUES.find(c=>c.id===parseInt(id))?.cleared_at)
+    updates.cleared_at = new Date().toISOString().split('T')[0];
+  const { error } = await sb.from('cheques').update(updates).eq('id',id);
+  if (error) { toast(error.message,'fail'); return; }
+  closeOverlay('editChequeModal');
+  toast('✅ Cheque updated!','ok');
+  loadCheques();
+}
+
+// ── Delete Cheque ──
+async function delCheque(id) {
+  if (!confirm('⚠️ DELETE this cheque permanently?')) return;
+  await sb.from('cheques').delete().eq('id',id);
+  toast('🗑️ Cheque deleted','ok');
+  loadCheques();
+}
+
+// ═══════════════════════════════════════
+// EXCEL EXPORT – DATE WISE (Uniform Table Format)
+// ═══════════════════════════════════════
+function exportDateWiseExcel() {
+  const search = document.getElementById('cqSearch').value.toLowerCase();
+  const from   = document.getElementById('cqFrom').value;
+  const to     = document.getElementById('cqTo').value;
+
+  let list = ALL_CHEQUES.filter(c => c.status !== 'cleared');
+  if (search) list = list.filter(c =>
+    (c.customer_name||'').toLowerCase().includes(search) ||
+    (c.bank_name||'').toLowerCase().includes(search) ||
+    (c.cheque_no||'').toLowerCase().includes(search)
+  );
+  if (from) list = list.filter(c => (c.cheque_date||'') >= from);
+  if (to)   list = list.filter(c => (c.cheque_date||'') <= to);
+
+  if (!list.length) { toast('No data to export','fail'); return; }
+
+  list = [...list].sort((a,b) => (a.cheque_date||'').localeCompare(b.cheque_date||''));
+
+  // ── 5 columns: A=S.No  B=Customer Name  C=Bank Name  D=Cheque No  E=Amount(₹) ──
+  const COLS    = 5;
+  const LAST    = 4; // 0-indexed last col (E)
+
+  // ── Styles ──
+  const sTitle = {
+    font:{bold:true,sz:13,color:{rgb:'FFFFFF'}},
+    fill:{fgColor:{rgb:'1B5E20'}},
+    alignment:{horizontal:'center',vertical:'center'}
+  };
+  const sGen = {
+    font:{italic:true,sz:9,color:{rgb:'666666'}},
+    alignment:{horizontal:'center',vertical:'center'}
+  };
+  const sHdr = {
+    font:{bold:true,sz:10,color:{rgb:'FFFFFF'}},
+    fill:{fgColor:{rgb:'2E7D32'}},
+    alignment:{horizontal:'center',vertical:'center'},
+    border:{top:{style:'thin',color:{rgb:'FFFFFF'}},bottom:{style:'thin',color:{rgb:'FFFFFF'}},left:{style:'thin',color:{rgb:'FFFFFF'}},right:{style:'thin',color:{rgb:'FFFFFF'}}}
+  };
+  const sHdrL = { ...sHdr, alignment:{horizontal:'left',vertical:'center'} };
+  const sDate = {
+    font:{bold:true,sz:11,color:{rgb:'FFFFFF'}},
+    fill:{fgColor:{rgb:'1565C0'}},
+    alignment:{horizontal:'center',vertical:'center'},
+    border:{top:{style:'thin',color:{rgb:'FFFFFF'}},bottom:{style:'thin',color:{rgb:'FFFFFF'}},left:{style:'thin',color:{rgb:'FFFFFF'}},right:{style:'thin',color:{rgb:'FFFFFF'}}}
+  };
+  const sData = {
+    font:{sz:10},
+    alignment:{horizontal:'center',vertical:'center'},
+    border:{top:{style:'thin',color:{rgb:'DDDDDD'}},bottom:{style:'thin',color:{rgb:'DDDDDD'}},left:{style:'thin',color:{rgb:'DDDDDD'}},right:{style:'thin',color:{rgb:'DDDDDD'}}}
+  };
+  const sDataL = { ...sData, alignment:{horizontal:'left',vertical:'center'} };
+  const sDataAmt = {
+    font:{bold:true,sz:10},
+    alignment:{horizontal:'right',vertical:'center'},
+    border:{top:{style:'thin',color:{rgb:'DDDDDD'}},bottom:{style:'thin',color:{rgb:'DDDDDD'}},left:{style:'thin',color:{rgb:'DDDDDD'}},right:{style:'thin',color:{rgb:'DDDDDD'}}}
+  };
+  const sTotalLbl = {
+    font:{bold:true,sz:10,color:{rgb:'C62828'}},
+    fill:{fgColor:{rgb:'FFEBEE'}},
+    alignment:{horizontal:'right',vertical:'center'},
+    border:{top:{style:'medium',color:{rgb:'C62828'}},bottom:{style:'medium',color:{rgb:'C62828'}},left:{style:'thin',color:{rgb:'FFCDD2'}},right:{style:'thin',color:{rgb:'FFCDD2'}}}
+  };
+  const sTotalAmt = {
+    font:{bold:true,sz:10,color:{rgb:'C62828'}},
+    fill:{fgColor:{rgb:'FFEBEE'}},
+    alignment:{horizontal:'right',vertical:'center'},
+    border:{top:{style:'medium',color:{rgb:'C62828'}},bottom:{style:'medium',color:{rgb:'C62828'}},left:{style:'thin',color:{rgb:'FFCDD2'}},right:{style:'medium',color:{rgb:'C62828'}}}
+  };
+  const sTotalBlank = {
+    font:{sz:10},
+    fill:{fgColor:{rgb:'FFEBEE'}},
+    border:{top:{style:'medium',color:{rgb:'C62828'}},bottom:{style:'medium',color:{rgb:'C62828'}},left:{style:'thin',color:{rgb:'FFCDD2'}},right:{style:'thin',color:{rgb:'FFCDD2'}}}
+  };
+  const sGrand = {
+    font:{bold:true,sz:11,color:{rgb:'FFFFFF'}},
+    fill:{fgColor:{rgb:'1B5E20'}},
+    alignment:{horizontal:'center',vertical:'center'},
+    border:{top:{style:'medium',color:{rgb:'FFFFFF'}},bottom:{style:'medium',color:{rgb:'FFFFFF'}},left:{style:'thin',color:{rgb:'FFFFFF'}},right:{style:'thin',color:{rgb:'FFFFFF'}}}
+  };
+  const sGrandLbl = { ...sGrand, alignment:{horizontal:'right',vertical:'center'} };
+  const sGrandAmt = { ...sGrand, alignment:{horizontal:'right',vertical:'center'} };
+
+  const wb = XLSX.utils.book_new();
+  const ws = {};
+  const merges = [];
+  let R = 0;
+
+  function sc(r, c, v, style, numFmt) {
+    const addr = XLSX.utils.encode_cell({r, c});
+    ws[addr] = { v, t: typeof v === 'number' ? 'n' : 's', s: style };
+    if (numFmt) ws[addr].z = numFmt;
+  }
+  function mr(r, c1, c2) { merges.push({s:{r,c:c1}, e:{r,c:c2}}); }
+  function fillR(r, style) {
+    for (let c = 0; c < COLS; c++) {
+      const addr = XLSX.utils.encode_cell({r, c});
+      if (!ws[addr]) ws[addr] = {v:'', t:'s', s:style};
+      else ws[addr].s = style;
+    }
+  }
+
+  // Row 0 – Title (merged A–E)
+  sc(R, 0, 'RSM Agro Group – Date Wise Cheque Report', sTitle);
+  mr(R, 0, LAST); fillR(R, sTitle); R++;
+
+  // Row 1 – Generated date (merged)
+  sc(R, 0, 'Generated: ' + new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}), sGen);
+  mr(R, 0, LAST); fillR(R, sGen); R++;
+
+  // Row 2 – Column headers (bold, green)
+  sc(R, 0, 'S.No',          sHdr);
+  sc(R, 1, 'Customer Name', sHdrL);
+  sc(R, 2, 'Bank Name',     sHdr);
+  sc(R, 3, 'Cheque No',     sHdr);
+  sc(R, 4, 'Amount (₹)',    sHdr);
+  R++;
+
+  // Group by date
+  const byDate = {};
+  list.forEach(c => {
+    const d = c.cheque_date || 'Unknown';
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(c);
+  });
+
+  let sno = 1;
+  let grandTotal = 0;
+
+  Object.keys(byDate).sort().forEach(date => {
+    const rows = byDate[date];
+    const dateTotal = rows.reduce((s,c) => s + Number(c.amount), 0);
+
+    // Date header – merged, centered, bold blue
+    sc(R, 0, fmtDate(date), sDate);
+    mr(R, 0, LAST); fillR(R, sDate); R++;
+
+    // Data rows
+    rows.forEach(c => {
+      const amt = Number(c.amount);
+      sc(R, 0, sno++,              sData);
+      sc(R, 1, c.customer_name||'',sDataL);
+      sc(R, 2, c.bank_name||'',    sData);
+      sc(R, 3, c.cheque_no||'',    sData);
+      sc(R, 4, amt,                sDataAmt, '₹#,##0.00');
+      grandTotal += amt;
+      R++;
+    });
+
+    // TOTAL row – label merged cols 0–3, amount in col 4
+    sc(R, 0, '',        sTotalBlank);
+    sc(R, 1, '',        sTotalBlank);
+    sc(R, 2, '',        sTotalBlank);
+    sc(R, 3, 'TOTAL',   sTotalLbl);
+    sc(R, 4, dateTotal, sTotalAmt, '₹#,##0.00');
+    mr(R, 0, 2);
+    R++;
+  });
+
+  // GRAND TOTAL row – label merged cols 0–3, amount in col 4
+  sc(R, 0, '',            sGrand);
+  sc(R, 1, '',            sGrand);
+  sc(R, 2, '',            sGrand);
+  sc(R, 3, 'GRAND TOTAL', sGrandLbl);
+  sc(R, 4, grandTotal,    sGrandAmt, '₹#,##0.00');
+  mr(R, 0, 2);
+  R++;
+
+  // Sheet metadata
+  ws['!ref']    = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:R-1,c:LAST}});
+  ws['!merges'] = merges;
+  ws['!cols']   = [{wch:7},{wch:30},{wch:22},{wch:16},{wch:18}];
+  ws['!rows']   = [];
+  ws['!rows'][0] = {hpt:24};
+  ws['!rows'][1] = {hpt:14};
+  ws['!rows'][2] = {hpt:20};
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Date Wise');
+  const today = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `RSM_Cheques_DateWise_${today}.xlsx`, {bookSST:true, cellStyles:true});
+  toast('✅ Date Wise Excel exported!', 'ok');
+}
+
+// ═══════════════════════════════════════
+// SHARED EXCEL HELPER – CUSTOMER TABLE
+// ═══════════════════════════════════════
+function buildCustomerWiseSheet(rows, headers, colWidths, titleText, grandLabelCol) {
+  // rows: array of {cols: [val,...], isData: true} or {cols:[val,...], isGrand: true}
+  const COLS = headers.length;
+  const LAST  = COLS - 1;
+  const wb = XLSX.utils.book_new();
+  const ws = {};
+  const merges = [];
+  let R = 0;
+
+  const sTitle = { font:{bold:true,sz:13,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'1B5E20'}}, alignment:{horizontal:'center',vertical:'center'} };
+  const sGen   = { font:{italic:true,sz:9,color:{rgb:'777777'}}, alignment:{horizontal:'center'} };
+  const sHdr   = { font:{bold:true,sz:10,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'2E7D32'}}, alignment:{horizontal:'center',vertical:'center'},
+    border:{bottom:{style:'medium',color:{rgb:'FFFFFF'}},right:{style:'thin',color:{rgb:'FFFFFF'}}} };
+  const sHdrL  = { ...sHdr, alignment:{horizontal:'left',vertical:'center'} };
+  const sSub   = { font:{bold:true,sz:10,color:{rgb:'1B5E20'}}, fill:{fgColor:{rgb:'E8F5E9'}}, alignment:{horizontal:'center',vertical:'center'},
+    border:{top:{style:'thin',color:{rgb:'A5D6A7'}},bottom:{style:'medium',color:{rgb:'A5D6A7'}},right:{style:'thin',color:{rgb:'CCCCCC'}}} };
+  const sSubL  = { ...sSub, alignment:{horizontal:'left',vertical:'center'} };
+  const sData  = { font:{sz:10}, alignment:{horizontal:'center',vertical:'center'},
+    border:{top:{style:'thin',color:{rgb:'EEEEEE'}},bottom:{style:'thin',color:{rgb:'EEEEEE'}},right:{style:'thin',color:{rgb:'EEEEEE'}},left:{style:'thin',color:{rgb:'EEEEEE'}}} };
+  const sDataL = { ...sData, alignment:{horizontal:'left',vertical:'center'} };
+  const sDataR = { ...sData, alignment:{horizontal:'right',vertical:'center'}, font:{sz:10,bold:true} };
+  const sGrand = { font:{bold:true,sz:11,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'2E7D32'}}, alignment:{horizontal:'center',vertical:'center'},
+    border:{right:{style:'thin',color:{rgb:'FFFFFF'}}} };
+  const sGrandR= { ...sGrand, alignment:{horizontal:'right',vertical:'center'} };
+  const sGrandL= { ...sGrand, alignment:{horizontal:'right',vertical:'center'} };
+
+  function sc(r,c,v,s,z){const a=XLSX.utils.encode_cell({r,c});ws[a]={v,t:typeof v==='number'?'n':'s',s};if(z)ws[a].z=z;}
+  function mr(r,c1,c2){merges.push({s:{r,c:c1},e:{r,c:c2}});}
+  function fillR(r,s){for(let c=0;c<COLS;c++){const a=XLSX.utils.encode_cell({r,c});if(!ws[a])ws[a]={v:'',t:'s',s};else ws[a].s=s;}}
+
+  // Title
+  sc(R,0,titleText,sTitle); mr(R,0,LAST); fillR(R,sTitle); R++;
+  // Generated
+  sc(R,0,'Generated: '+new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),sGen);
+  mr(R,0,LAST); fillR(R,sGen); R++;
+
+  // Column headers
+  headers.forEach((h,c)=> sc(R,c,h, c===1?sHdrL:sHdr));
+  R++;
+
+  rows.forEach(row => {
+    if (row.isSubtotal) {
+      row.cols.forEach((v,c)=> sc(R,c,v, c===1?sSubL:sSub, c===row.amtCol?'₹#,##0.00':undefined));
+    } else if (row.isGrand) {
+      row.cols.forEach((v,c)=> {
+        const s = c===1?sGrandL : c===row.amtCol?sGrandR : sGrand;
+        sc(R,c,v,s, c===row.amtCol?'₹#,##0.00':undefined);
+      });
+    } else {
+      row.cols.forEach((v,c)=> {
+        const s = c===1?sDataL : c===row.amtCol?sDataR : sData;
+        sc(R,c,v,s, c===row.amtCol?'₹#,##0.00':undefined);
+      });
+    }
+    R++;
+  });
+
+  ws['!ref']    = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:R-1,c:LAST}});
+  ws['!merges'] = merges;
+  ws['!cols']   = colWidths.map(w=>({wch:w}));
+  ws['!rows']   = [{hpt:22},{hpt:14},{hpt:20}];
+  return {wb, ws};
+}
+
+// ═══════════════════════════════════════
+// EXCEL EXPORT – BILLS CUSTOMER WISE
+// ═══════════════════════════════════════
+function exportBillsCustomerExcel() {
+  if (!ALL_CUSTS || !ALL_CUSTS.length) { toast('No data to export','fail'); return; }
+  const list = ALL_CUSTS.filter(c=>(c.bill_count||0)>0).sort((a,b)=>b.total_pending-a.total_pending);
+  if (!list.length) { toast('No customer data to export','fail'); return; }
+
+  const grandBills  = list.reduce((s,c)=>s+(c.bill_count||0),0);
+  const grandAmt    = list.reduce((s,c)=>s+(c.total_pending||0),0);
+  const AMT_COL     = 3;
+
+  const rows = [];
+  // Subtotal row (totals under header)
+  rows.push({ isSubtotal:true, amtCol:AMT_COL, cols:['', '', grandBills, grandAmt, ''] });
+  // Data rows
+  list.forEach((c,i)=> rows.push({ amtCol:AMT_COL, cols:[i+1, c.name||'', c.bill_count||0, Number(c.total_pending||0), ''] }));
+  // Grand total
+  rows.push({ isGrand:true, amtCol:AMT_COL, cols:['','Grand Total', grandBills, grandAmt,''] });
+
+  const {wb, ws} = buildCustomerWiseSheet(rows,
+    ['S.NO','CUSTOMER NAME','NO. OF BILLS','TOTAL PENDING AMOUNT',''],
+    [7, 32, 16, 22, 10],
+    'RSM Agro Group – Customer Wise Pending Bills Report', 1
+  );
+  XLSX.utils.book_append_sheet(wb, ws, 'Customer Wise');
+  const today = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `RSM_Bills_CustomerWise_${today}.xlsx`, {bookSST:true, cellStyles:true});
+  toast('✅ Bills Customer Wise Excel exported!', 'ok');
+}
+
+// ═══════════════════════════════════════
+// EXCEL EXPORT – CHEQUE CUSTOMER WISE
+// ═══════════════════════════════════════
+function exportCustomerWiseExcel() {
+  const list = ALL_CQ_CUSTS_DISPLAY;
+  if (!list || !list.length) { toast('No data to export','fail'); return; }
+
+  const grandTotal   = list.reduce((s,c)=>s+c.total,0);
+  const grandCount   = list.reduce((s,c)=>s+c.count,0);
+  const AMT_COL      = 3;
+
+  const rows = [];
+  // Subtotal row
+  rows.push({ isSubtotal:true, amtCol:AMT_COL, cols:['','', grandCount, grandTotal,''] });
+  // Data rows
+  list.forEach((c,i)=> rows.push({ amtCol:AMT_COL,
+    cols:[i+1, c.name||'', c.count, Number(c.total), c.pending>0?`${c.pending} Pending`:'All Cleared'] }));
+  // Grand total
+  rows.push({ isGrand:true, amtCol:AMT_COL, cols:['','Grand Total', grandCount, grandTotal,''] });
+
+  const {wb, ws} = buildCustomerWiseSheet(rows,
+    ['S.NO','CUSTOMER NAME','NO. OF CHEQUES','TOTAL AMOUNT','PENDING CLEARANCE'],
+    [7, 32, 18, 22, 20],
+    'RSM Agro Group – Customer Wise Cheque Report', 1
+  );
+  XLSX.utils.book_append_sheet(wb, ws, 'Customer Wise');
+  const today = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `RSM_Cheques_CustomerWise_${today}.xlsx`, {bookSST:true, cellStyles:true});
+  toast('✅ Customer Wise Excel exported!', 'ok');
+}
+
+// ═══════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════
+function fmt(n) { return Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDate(d) { if(!d)return'-'; try{return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}catch(e){return d;} }
+function esc(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+function showLoginErr(m) { const e=document.getElementById('loginErr'); e.textContent=m; e.style.display='block'; setTimeout(()=>e.style.display='none',5000); }
+function showErrBox(id,m) { const e=document.getElementById(id); e.textContent=m; e.style.display='block'; setTimeout(()=>e.style.display='none',5000); }
+
+// ══════════════════════════════════════
+// CHEQUE CUSTOMER SEARCH
+// ══════════════════════════════════════
+function showCqDropdown() {
+  const q = document.getElementById('cqCustSearch').value.toLowerCase().trim();
+  const dd = document.getElementById('cqCustDropdown');
+  
+  // Filter customers
+  const filtered = q.length === 0 ? [] : ALL_CUSTS.filter(c => c.name.toLowerCase().includes(q));
+  
+  if (!q || filtered.length === 0) {
+    dd.style.display = 'none';
+    return;
+  }
+
+  dd.innerHTML = filtered.slice(0, 15).map(c => 
+    `<div onclick="selectCqCust(${c.id},'${esc(c.name)}')" 
+      style="padding:10px 14px;cursor:pointer;font-size:.9rem;border-bottom:1px solid #f0f4f0;transition:background .15s;"
+      onmouseover="this.style.background='#e8f5e9'" 
+      onmouseout="this.style.background='white'">${esc(c.name)}</div>`
+  ).join('');
+  
+  dd.style.display = 'block';
+}
+
+function selectCqCust(id, name) {
+  document.getElementById('cqCust').value = id;
+  document.getElementById('cqCustSearch').value = name;
+  document.getElementById('cqCustDropdown').style.display = 'none';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('cqCustDropdown');
+  const input = document.getElementById('cqCustSearch');
+  if (dd && input && !dd.contains(e.target) && e.target !== input) {
+    dd.style.display = 'none';
+  }
+});
+
+
+// BILL AMOUNT SEARCH
+function searchBillAmount() {
+  const raw = document.getElementById('billAmtSearch').value.trim();
+  const info = document.getElementById('billSearchInfo');
+  const clr = document.getElementById('billSearchClear');
+
+  if (!raw) {
+    // No query - show original list
+    clearBillSearch();
+    return;
+  }
+
+  clr.style.display = 'inline';
+  const query = parseFloat(raw);
+
+  // Find matching bills (exact or contains as string)
+  const matched = ALL_BILLS.filter(b => {
+    const amt = Number(b.pending_amount);
+    const amtStr = amt.toString();
+    return amtStr.includes(raw) || Math.abs(amt - query) < 0.01;
+  });
+
+  const rest = ALL_BILLS.filter(b => {
+    const amt = Number(b.pending_amount);
+    const amtStr = amt.toString();
+    return !amtStr.includes(raw) && Math.abs(amt - query) >= 0.01;
+  });
+
+  if (!matched.length) {
+    info.textContent = 'No bills found with that amount.';
+    info.style.color = 'var(--red)';
+    renderBillsSearchMode(ALL_BILLS, []);
+    return;
+  }
+
+  info.textContent = matched.length + ' bill(s) found — shown on top';
+  info.style.color = 'var(--g2)';
+
+  // Matched on top, rest below
+  renderBillsSearchMode([...matched, ...rest], matched.map(b => b.id));
+}
+
+function clearBillSearch() {
+  document.getElementById('billAmtSearch').value = '';
+  document.getElementById('billSearchInfo').textContent = '';
+  const clr = document.getElementById('billSearchClear');
+  if (clr) clr.style.display = 'none';
+  clearComboSearch();
+  renderBills(ALL_BILLS);
+}
+
+function renderBillsSearchMode(list, highlightIds) {
+  // Same as renderBills but highlights matched rows at top
+  const total = ALL_BILLS.reduce((s,b)=>s+Number(b.pending_amount),0);
+  document.getElementById('detTotal').textContent = '₹'+fmt(total);
+  const tbody = document.getElementById('billBody');
+  if (!list.length) {
+    tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="ei">📄</div>No bills found.</div></td></tr>';
+    document.getElementById('billPager').innerHTML='';
+    return;
+  }
+  let h = '';
+  list.forEach((b,i) => {
+    const isHit = highlightIds.includes(b.id);
+    const partial = b.status === 'partial';
+    const newb = isNew(b.created_at);
+    let rc = partial ? 'row-partial' : newb ? 'row-new' : '';
+    const badge = partial
+      ? '<span class="badge badge-partial">🔴 Partial</span>'
+      : newb ? '<span class="badge badge-new">🟢 New</span>'
+      : '<span class="badge badge-pending">Pending</span>';
+    const dateStr = b.bill_date ? b.bill_date.split('T')[0] : '';
+    const hitStyle = isHit
+      ? 'background:linear-gradient(90deg,#fffde7,#fff9c4) !important;border-left:4px solid #f9a825;'
+      : '';
+    const amtDisplay = isHit
+      ? `<strong style="color:var(--g1);font-size:1rem;">₹${fmt(b.pending_amount)}</strong>`
+      : `<strong>₹${fmt(b.pending_amount)}</strong>`;
+    h += `<tr class="${rc}" style="${hitStyle}" draggable="true" data-id="${b.id}" data-idx="${i}">
+      <td style="text-align:center;"><span class="drag-handle" title="Drag to reorder">⠿</span></td>
+      <td><input type="checkbox" class="bchk" value="${b.id}" onchange="updateSelBar()"/></td>
+      <td>${i+1}${isHit ? ' 🔍' : ''}</td>
+      <td>${fmtDate(b.bill_date)}</td>
+      <td>${amtDisplay}</td>
+      <td>${badge}</td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap;">
+        <button class="btn btn-green btn-sm" onclick="openPay(${b.id},${b.pending_amount})">💰 Pay</button>
+        <button class="btn btn-outline btn-sm" onclick="openEditBill(${b.id},'${dateStr}',${b.pending_amount})">✏️</button>
+        <button class="btn btn-red btn-sm" onclick="delBill(${b.id})">🗑️</button>
+      </td>
+    </tr>`;
+  });
+  tbody.innerHTML = h;
+  document.getElementById('billPager').innerHTML = '';
+  initDragDrop();
+}
+
+// DRAG AND DROP REORDER
+let dragSrcIdx = null;
+function initDragDrop() {
+  const tbody = document.getElementById('billBody');
+  const rows = tbody.querySelectorAll('tr[draggable]');
+  rows.forEach(row => {
+    row.addEventListener('dragstart', function(e) {
+      dragSrcIdx = parseInt(this.dataset.idx);
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', function() {
+      this.classList.remove('dragging');
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+    });
+    row.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      this.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', function() {
+      this.classList.remove('drag-over');
+    });
+    row.addEventListener('drop', function(e) {
+      e.preventDefault();
+      this.classList.remove('drag-over');
+      const targetIdx = parseInt(this.dataset.idx);
+      if (dragSrcIdx === null || dragSrcIdx === targetIdx) return;
+      const moved = ALL_BILLS.splice(dragSrcIdx, 1)[0];
+      ALL_BILLS.splice(targetIdx, 0, moved);
+      dragSrcIdx = null;
+      clearBillSearch();
+      toast('✅ Order updated!', 'ok');
+    });
+  });
+}
+
+// ═══════════════════════════════════════
+// COMBINATION BILL SEARCH
+// ═══════════════════════════════════════
+function searchBillCombination() {
+  const raw   = document.getElementById('billComboSearch').value.trim();
+  const info  = document.getElementById('billComboInfo');
+  const res   = document.getElementById('billComboResults');
+  const clr   = document.getElementById('billComboSearchClear');
+
+  if (!raw) { clearComboSearch(); return; }
+
+  clr.style.display = 'inline';
+  const target = parseFloat(raw);
+  if (isNaN(target) || target <= 0) {
+    info.textContent = 'Enter a valid amount.';
+    info.style.color = '#c62828';
+    res.innerHTML = '';
+    return;
+  }
+
+  // Only look at pending bills for this customer
+  const bills = ALL_BILLS.filter(b => Number(b.pending_amount) > 0);
+
+  // Find ALL combinations of 2 or more bills whose sum matches target
+  const matches = [];
+  const n = bills.length;
+
+  // Limit to reasonable combos (up to 6 bills deep to keep it fast)
+  const MAX_DEPTH = Math.min(n, 7);
+
+  function findCombos(start, current, currentSum) {
+    if (current.length >= 2) {
+      if (Math.abs(currentSum - target) < 0.01) {
+        matches.push([...current]);
+        // Don't return — keep searching deeper (might find more)
+      }
+    }
+    if (current.length >= MAX_DEPTH) return;
+    if (currentSum > target + 0.01) return; // prune: amounts are positive
+    for (let i = start; i < n; i++) {
+      const amt = Number(bills[i].pending_amount);
+      if (currentSum + amt > target + 0.01) continue; // prune
+      current.push(bills[i]);
+      findCombos(i + 1, current, currentSum + amt);
+      current.pop();
+    }
+  }
+
+  findCombos(0, [], 0);
+
+  if (!matches.length) {
+    info.textContent = '❌ No combination of bills matches ₹' + fmt(target);
+    info.style.color = '#c62828';
+    res.innerHTML = '';
+    return;
+  }
+
+  info.textContent = '✅ ' + matches.length + ' matching combination' + (matches.length > 1 ? 's' : '') + ' found for ₹' + fmt(target);
+  info.style.color = '#1b5e20';
+
+  // Render each matching combination as a card
+  let html = '';
+  matches.forEach((combo, ci) => {
+    const comboTotal = combo.reduce((s, b) => s + Number(b.pending_amount), 0);
+    const billIds = combo.map(b => b.id).join(',');
+    html += `<div style="
+      background:linear-gradient(135deg,#f3e5f5,#fdf6ff);
+      border:2px solid #7b1fa2;
+      border-radius:12px;
+      padding:14px 16px;
+      margin-bottom:10px;
+      box-shadow:0 2px 10px rgba(123,31,162,0.10);
+    ">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <span style="font-weight:800;font-size:.95rem;color:#6a1b9a;">
+          🔗 Combination ${ci + 1} &nbsp;—&nbsp; ${combo.length} Bills
+        </span>
+        <span style="font-weight:800;font-size:1.05rem;color:#1b5e20;background:#e8f5e9;padding:4px 12px;border-radius:20px;">
+          ₹${fmt(comboTotal)}
+        </span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
+        <thead>
+          <tr style="background:#ede7f6;">
+            <th style="padding:7px 10px;text-align:left;color:#4a148c;font-size:.75rem;text-transform:uppercase;letter-spacing:.4px;">#</th>
+            <th style="padding:7px 10px;text-align:left;color:#4a148c;font-size:.75rem;text-transform:uppercase;letter-spacing:.4px;">Date</th>
+            <th style="padding:7px 10px;text-align:right;color:#4a148c;font-size:.75rem;text-transform:uppercase;letter-spacing:.4px;">Pending Amount</th>
+            <th style="padding:7px 10px;text-align:left;color:#4a148c;font-size:.75rem;text-transform:uppercase;letter-spacing:.4px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    combo.forEach((b, i) => {
+      const partial = b.status === 'partial';
+      const newb = isNew(b.created_at);
+      const badge = partial
+        ? '<span class="badge badge-partial">🔴 Partial</span>'
+        : newb ? '<span class="badge badge-new">🟢 New</span>'
+        : '<span class="badge badge-pending">Pending</span>';
+      html += `<tr style="border-bottom:1px solid #e1bee7;background:${i%2===0?'#fff':'#faf5ff'}">
+        <td style="padding:8px 10px;color:#7b1fa2;font-weight:700;">${i + 1}</td>
+        <td style="padding:8px 10px;">${fmtDate(b.bill_date)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:800;color:#1b5e20;">₹${fmt(b.pending_amount)}</td>
+        <td style="padding:8px 10px;">${badge}</td>
+      </tr>`;
+    });
+    html += `</tbody>
+        <tfoot>
+          <tr style="background:#ede7f6;">
+            <td colspan="2" style="padding:8px 10px;font-weight:800;color:#4a148c;">TOTAL</td>
+            <td style="padding:8px 10px;text-align:right;font-weight:800;font-size:1rem;color:#1b5e20;">₹${fmt(comboTotal)}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div style="margin-top:10px;text-align:right;">
+        <button class="btn btn-sm" onclick="markComboPaid('${billIds}')"
+          style="background:#7b1fa2;color:white;font-size:.82rem;padding:7px 16px;">
+          ✅ Mark These Bills Paid
+        </button>
+      </div>
+    </div>`;
+  });
+
+  res.innerHTML = html;
+}
+
+function clearComboSearch() {
+  const el = document.getElementById('billComboSearch');
+  if (el) el.value = '';
+  const info = document.getElementById('billComboInfo');
+  if (info) { info.textContent = ''; }
+  const res = document.getElementById('billComboResults');
+  if (res) res.innerHTML = '';
+  const clr = document.getElementById('billComboSearchClear');
+  if (clr) clr.style.display = 'none';
+}
+
+async function markComboPaid(idsStr) {
+  const ids = idsStr.split(',').map(Number);
+  if (!ids.length) return;
+  const total = ids.reduce((s, id) => {
+    const b = ALL_BILLS.find(x => x.id === id);
+    return s + (b ? Number(b.pending_amount) : 0);
+  }, 0);
+  if (!confirm(`Mark ${ids.length} bill(s) totalling ₹${fmt(total)} as FULLY PAID?\nThis cannot be undone.`)) return;
+  for (const id of ids) {
+    const bill = ALL_BILLS.find(b => b.id === id);
+    if (bill) {
+      await sb.from('bills').update({ pending_amount: 0, status: 'paid' }).eq('id', id);
+      await sb.from('payments').insert({ bill_id: id, amount_paid: bill.pending_amount });
+    }
+  }
+  toast('✅ ' + ids.length + ' bill(s) marked as paid!', 'ok');
+  clearComboSearch();
+  loadBills();
+  loadCustomers();
+}
+
+
+// ══════════════════════════════════════
+// SHOW ALL BILLS TOGGLE
+// ══════════════════════════════════════
+function toggleShowAll() {
+  BILL_SHOW_ALL = !BILL_SHOW_ALL;
+  BILL_PAGE = 1;
+  const btn = document.getElementById('showAllBtn');
+  if (btn) {
+    btn.textContent = BILL_SHOW_ALL ? '📄 Show Pages (50 per page)' : '📋 Show All Bills';
+    btn.style.background = BILL_SHOW_ALL ? '#2e7d32' : 'white';
+    btn.style.color = BILL_SHOW_ALL ? 'white' : '#2e7d32';
+  }
+  renderBills(ALL_BILLS);
+}
+
+</script>
