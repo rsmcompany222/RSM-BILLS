@@ -733,7 +733,7 @@ tr.drag-over{border-top:3px solid #2e7d32 !important;background:#f1f8f1 !importa
       </div>
       <!-- Search box OUTSIDE the table so it is never re-rendered and destroyed -->
       <div style="margin-bottom:10px;">
-        <input class="cust-search-input" id="cqCustSearch" placeholder="🔍 Search customer..." oninput="filterCqCustomer()" style="max-width:320px;padding:10px 14px;"/>
+        <input class="cust-search-input" id="cqCustWiseSearch" placeholder="🔍 Search customer..." oninput="filterCqCustomer()" style="max-width:320px;padding:10px 14px;"/>
       </div>
       <div class="cust-table-wrap">
         <table>
@@ -1735,7 +1735,7 @@ function renderCqCustTable(list) {
   tb.innerHTML = h;
 }
 function filterCqCustomer() {
-  const q = document.getElementById('cqCustSearch').value.toLowerCase();
+  const q = document.getElementById('cqCustWiseSearch').value.toLowerCase();
   renderCqCustTable(ALL_CQ_CUSTS_DISPLAY.filter(c=>c.name.toLowerCase().includes(q)));
 }
 
