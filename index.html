@@ -731,10 +731,6 @@ tr.drag-over{border-top:3px solid #2e7d32 !important;background:#f1f8f1 !importa
         <div class="sec-title">👤 Customer Wise Cheque Totals</div>
         <button class="btn btn-sm" style="background:#1565c0;color:white;" onclick="exportCustomerWiseExcel()">⬇️ Export to Excel</button>
       </div>
-      <!-- Search box OUTSIDE the table so it is never re-rendered and destroyed -->
-      <div style="margin-bottom:10px;">
-        <input class="cust-search-input" id="cqCustWiseSearch" placeholder="🔍 Search customer..." oninput="filterCqCustomer()" style="max-width:320px;padding:10px 14px;"/>
-      </div>
       <div class="cust-table-wrap">
         <table>
           <thead><tr>
@@ -1073,17 +1069,10 @@ async function loadBills() {
   // Fetch ALL bills for this customer (no status filter) then show only those with pending amount > 0
   const { data, error } = await sb.from('bills')
     .select('*').eq('customer_id', CUR_CUST_ID)
-    .order('bill_date', { ascending: true }).order('id', { ascending: true });
+    .order('bill_date', { ascending: true }).order('created_at', { ascending: true });
   if (error) { toast(error.message,'fail'); return; }
   // Only show bills that still have money pending
-  // Sort stably: bill_date ASC, then id ASC — guarantees consistent order every load
-  const pendingBills = (data||[])
-    .filter(b => Number(b.pending_amount) > 0)
-    .sort((a, b) => {
-      const da = (a.bill_date||''), db = (b.bill_date||'');
-      if (da !== db) return da < db ? -1 : 1;
-      return (a.id||0) - (b.id||0);
-    });
+  const pendingBills = (data||[]).filter(b => Number(b.pending_amount) > 0);
   ALL_BILLS = pendingBills;
   renderBills(pendingBills);
 }
@@ -1268,7 +1257,10 @@ async function paySelected() {
     }
   }
   toast(`✅ ${ids.length} bill(s) marked as paid!`,'ok');
-  loadBills(); loadCustomers();
+  // Update ALL_BILLS in-place to preserve order
+  ALL_BILLS = ALL_BILLS.filter(b => !ids.includes(b.id));
+  renderBills(ALL_BILLS);
+  loadCustomers();
 }
 
 // ═══════════════════════════════════════
@@ -1381,8 +1373,11 @@ async function quickAddBill() {
   document.getElementById('qaAmt').value = '';
   document.getElementById('qaAmt').focus();
   toast('✅ Bill added!', 'ok');
+  const { data: newBill } = await sb.from('bills')
+    .select('*').eq('customer_id', CUR_CUST_ID).eq('status','pending')
+    .order('created_at', { ascending: false }).limit(1);
+  if (newBill && newBill.length) ALL_BILLS.push(newBill[0]);
   clearBillSearch();
-  await loadBills();
   loadCustomers(); updateSyncTime();
 }
 
@@ -1401,8 +1396,11 @@ async function addBill() {
   closeOverlay('addBillModal');
   document.getElementById('nAmt').value='';
   toast('✅ Bill added!','ok');
+  const { data: newBill } = await sb.from('bills')
+    .select('*').eq('customer_id', CUR_CUST_ID).eq('status','pending')
+    .order('created_at', { ascending: false }).limit(1);
+  if (newBill && newBill.length) ALL_BILLS.push(newBill[0]);
   clearBillSearch();
-  await loadBills();
   loadCustomers();
 }
 
@@ -1422,7 +1420,11 @@ async function updateBill() {
   if (error) { toast(error.message,'fail'); return; }
   closeOverlay('editBillModal');
   toast('✅ Bill updated!','ok');
-  loadBills(); loadCustomers();
+  // Update in-place to preserve order
+  const bill = ALL_BILLS.find(b => b.id === parseInt(id));
+  if (bill) { bill.bill_date = date; bill.pending_amount = amt; }
+  renderBills(ALL_BILLS);
+  loadCustomers();
 }
 
 function openPay(id, pending) {
@@ -1462,7 +1464,10 @@ async function delBill(id) {
   await sb.from('payments').delete().eq('bill_id',id);
   await sb.from('bills').delete().eq('id',id);
   toast('🗑️ Bill deleted','ok');
-  loadBills(); loadCustomers();
+  // Remove from ALL_BILLS in-place to preserve order of remaining bills
+  ALL_BILLS = ALL_BILLS.filter(b => b.id !== id);
+  renderBills(ALL_BILLS);
+  loadCustomers();
 }
 
 // ═══════════════════════════════════════
@@ -1704,10 +1709,10 @@ function renderCqCustTable(list) {
   const grandTotal = list.reduce((s,c)=>s+c.total,0);
   const grandCount = list.reduce((s,c)=>s+c.count,0);
 
-  // Subtotal row at top
+  // Subtotal row with search
   let h = `<tr class="subtotal-row">
     <td></td>
-    <td><strong>GRAND TOTAL</strong></td>
+    <td><input class="cust-search-input" id="cqCustSearch" placeholder="🔍 Search customer..." oninput="filterCqCustomer()" style="max-width:280px;"/></td>
     <td><strong>${grandCount.toLocaleString('en-IN')}</strong></td>
     <td><strong>₹${fmt(grandTotal)}</strong></td>
     <td></td>
@@ -1735,7 +1740,7 @@ function renderCqCustTable(list) {
   tb.innerHTML = h;
 }
 function filterCqCustomer() {
-  const q = document.getElementById('cqCustWiseSearch').value.toLowerCase();
+  const q = document.getElementById('cqCustSearch').value.toLowerCase();
   renderCqCustTable(ALL_CQ_CUSTS_DISPLAY.filter(c=>c.name.toLowerCase().includes(q)));
 }
 
@@ -2526,7 +2531,9 @@ async function markComboPaid(idsStr) {
   }
   toast('✅ ' + ids.length + ' bill(s) marked as paid!', 'ok');
   clearComboSearch();
-  loadBills();
+  // Remove paid bills from ALL_BILLS in-place to preserve order
+  ALL_BILLS = ALL_BILLS.filter(b => !ids.includes(b.id));
+  renderBills(ALL_BILLS);
   loadCustomers();
 }
 
