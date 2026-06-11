@@ -6,7 +6,318 @@
 <title>RSM Pending Bills</title>
 <link rel="icon" href="data:,">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+
+// ═══════════════════════════════════════════════════════
+// MANUFACTURING LOTS MODULE
+// ═══════════════════════════════════════════════════════
+let ALL_LOTS = [];
+let LOT_FILTER = 'all';
+
+// ── Lot filter ──
+function setLotFilter(f) {
+  LOT_FILTER = f;
+  ['all','open','closed'].forEach(x => {
+    const btn = document.getElementById('lotFilter' + x.charAt(0).toUpperCase() + x.slice(1));
+    if (btn) {
+      btn.style.background = x === f ? 'var(--gbg)' : 'white';
+      btn.style.color = 'var(--g2)';
+    }
+  });
+  renderLots();
+}
+
+// ── Load all lots from Supabase ──
+async function loadLots() {
+  const container = document.getElementById('lotsContainer');
+  container.innerHTML = '<div class="empty"><div class="ei">⏳</div>Loading lots...</div>';
+  const { data: lots, error } = await sb.from('manufacturing_lots')
+    .select('*').order('created_at', { ascending: false });
+  if (error) { toast(error.message, 'fail'); return; }
+
+  // Load all entries for these lots
+  const lotIds = (lots || []).map(l => l.id);
+  let entries = [], excesses = [];
+  if (lotIds.length) {
+    const { data: en } = await sb.from('lot_entries').select('*').in('lot_id', lotIds).order('entry_date', { ascending: true });
+    const { data: ex } = await sb.from('lot_excess').select('*').in('lot_id', lotIds).order('entry_date', { ascending: true });
+    entries = en || [];
+    excesses = ex || [];
+  }
+
+  ALL_LOTS = (lots || []).map(l => ({
+    ...l,
+    entries: entries.filter(e => e.lot_id === l.id),
+    excesses: excesses.filter(e => e.lot_id === l.id)
+  }));
+
+  renderLots();
+}
+
+// ── Render lots ──
+function renderLots() {
+  const container = document.getElementById('lotsContainer');
+  const badge = document.getElementById('lotCountBadge');
+  let list = ALL_LOTS;
+  if (LOT_FILTER === 'open')   list = ALL_LOTS.filter(l => l.status === 'open');
+  if (LOT_FILTER === 'closed') list = ALL_LOTS.filter(l => l.status === 'closed');
+  if (badge) badge.textContent = '(' + ALL_LOTS.length + ' lots)';
+
+  if (!list.length) {
+    container.innerHTML = '<div class="empty"><div class="ei">🌾</div>No lots yet. Create one above!</div>';
+    return;
+  }
+
+  container.innerHTML = list.map(lot => renderLotCard(lot)).join('');
+}
+
+// ── Render a single lot card ──
+function renderLotCard(lot) {
+  const isOpen = lot.status === 'open';
+  const inputBags = Number(lot.input_bags);
+  const actualUsed = lot.entries.reduce((s, e) => s + Number(e.bags_used), 0);
+  const totalExcess = lot.excesses.reduce((s, e) => s + Number(e.excess_bags), 0);
+  const balance = inputBags - actualUsed;
+  const totalOutput = actualUsed + totalExcess;
+
+  const hdrClass = isOpen ? 'lot-hdr' : 'lot-hdr lot-hdr-closed';
+  const badgeHtml = isOpen
+    ? '<span class="lot-badge-open">Open</span>'
+    : '<span class="lot-badge-closed">Closed</span>';
+
+  const balColor = balance <= 0 ? 'color:var(--g2)' : (balance < inputBags * 0.2 ? 'color:#e65100' : 'color:var(--red)');
+
+  // Entry rows
+  const entryRows = lot.entries.length
+    ? lot.entries.map((e, i) => `
+        <tr>
+          <td>${i+1}</td>
+          <td>${fmtDate(e.entry_date)}</td>
+          <td><strong>${Number(e.bags_used).toLocaleString('en-IN')}</strong></td>
+          <td>${isOpen ? `<button class="btn btn-red btn-sm" style="padding:3px 7px;" onclick="delLotEntry(${e.id},${lot.id})">🗑️</button>` : ''}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:12px;">No entries yet</td></tr>';
+
+  // Excess rows
+  const excessRows = lot.excesses.length
+    ? lot.excesses.map((e, i) => `
+        <tr>
+          <td>${i+1}</td>
+          <td>${fmtDate(e.entry_date)}</td>
+          <td><strong style="color:#e65100;">${Number(e.excess_bags).toLocaleString('en-IN')}</strong></td>
+          <td>${isOpen ? `<button class="btn btn-red btn-sm" style="padding:3px 7px;" onclick="delLotExcess(${e.id},${lot.id})">🗑️</button>` : ''}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:12px;">No excess recorded</td></tr>';
+
+  // Quick-add sections (only for open lots)
+  const addEntryHtml = isOpen ? `
+    <div class="lot-qentry">
+      <div class="qf">
+        <label>Date</label>
+        <input type="date" id="entDate_${lot.id}" value="${new Date().toISOString().split('T')[0]}"/>
+      </div>
+      <div class="qf" style="max-width:100px;">
+        <label>Bags Used</label>
+        <input type="number" id="entBags_${lot.id}" placeholder="20" min="1"/>
+      </div>
+      <button class="btn btn-green btn-sm" onclick="addLotEntry(${lot.id})">+ Add</button>
+    </div>` : '';
+
+  const addExcessHtml = isOpen ? `
+    <div class="lot-qexcess">
+      <div class="qf">
+        <label>Date</label>
+        <input type="date" id="exDate_${lot.id}" value="${new Date().toISOString().split('T')[0]}"/>
+      </div>
+      <div class="qf" style="max-width:110px;">
+        <label>Excess Bags</label>
+        <input type="number" id="exBags_${lot.id}" placeholder="5" min="1"/>
+      </div>
+      <button class="btn btn-amber btn-sm" onclick="addLotExcess(${lot.id})">+ Add Excess</button>
+    </div>` : '';
+
+  return `
+  <div class="lot-card" id="lotCard_${lot.id}">
+    <!-- Header -->
+    <div class="${hdrClass}">
+      <div class="lot-hdr-name">
+        📦 ${esc(lot.lot_name)} ${badgeHtml}
+      </div>
+      <div class="lot-hdr-meta">
+        <span>📅 ${fmtDate(lot.lot_date)}</span>
+        <span>📦 Input: ${inputBags.toLocaleString('en-IN')} bags</span>
+        ${isOpen
+          ? `<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.4);" onclick="closeLot(${lot.id})">🔒 Close Lot</button>`
+          : `<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.4);" onclick="deleteLot(${lot.id},'${esc(lot.lot_name)}')">🗑️ Delete</button>`
+        }
+      </div>
+    </div>
+
+    <!-- Balance Bar -->
+    <div class="lot-bal-bar">
+      <div class="lot-bal-cell">
+        <div class="lot-bal-label">Input Bags</div>
+        <div class="lot-bal-val" style="color:var(--g2);">${inputBags.toLocaleString('en-IN')}</div>
+      </div>
+      <div class="lot-bal-cell">
+        <div class="lot-bal-label">Manufactured (Used)</div>
+        <div class="lot-bal-val" style="color:#e65100;">${actualUsed.toLocaleString('en-IN')}</div>
+      </div>
+      <div class="lot-bal-cell">
+        <div class="lot-bal-label">Balance Bags</div>
+        <div class="lot-bal-val" style="${balColor};">${balance.toLocaleString('en-IN')}${balance <= 0 ? ' ✅' : ''}</div>
+      </div>
+    </div>
+
+    <!-- Two-column body -->
+    <div class="lot-body">
+      <!-- LEFT: Manufacturing Entries -->
+      <div class="lot-section">
+        <div class="lot-sec-hd">
+          <div class="lot-sec-title" style="color:var(--g2);">📋 Manufacturing Entries</div>
+          <span style="font-size:.75rem;color:var(--muted);font-weight:700;">Used: <strong style="color:var(--g2);">${actualUsed.toLocaleString('en-IN')} bags</strong></span>
+        </div>
+        <table class="lot-etbl">
+          <thead><tr><th>#</th><th>Date</th><th>Bags Used</th><th></th></tr></thead>
+          <tbody>${entryRows}</tbody>
+        </table>
+        ${addEntryHtml}
+      </div>
+
+      <!-- RIGHT: Excess Bags -->
+      <div class="lot-section">
+        <div class="lot-sec-hd">
+          <div class="lot-sec-title" style="color:#f59f00;">📦 Excess Bags</div>
+          <span style="font-size:.75rem;color:var(--muted);font-weight:700;">Total: <strong style="color:#e65100;">${totalExcess.toLocaleString('en-IN')} bags</strong></span>
+        </div>
+        <table class="lot-etbl">
+          <thead><tr><th>#</th><th>Date</th><th>Excess Bags</th><th></th></tr></thead>
+          <tbody>${excessRows}</tbody>
+        </table>
+        ${addExcessHtml}
+      </div>
+    </div>
+
+    <!-- Summary Footer -->
+    <div class="lot-footer">
+      <div class="lot-sum-grid">
+        <div class="lot-sum-cell">
+          <div class="lot-sum-label">Actual Output</div>
+          <div class="lot-sum-val" style="color:var(--g2);">${actualUsed.toLocaleString('en-IN')}</div>
+          <div class="lot-sum-sub">Manufacturing only</div>
+        </div>
+        <div class="lot-sum-cell">
+          <div class="lot-sum-label">Excess Output</div>
+          <div class="lot-sum-val" style="color:#e65100;">${totalExcess.toLocaleString('en-IN')}</div>
+          <div class="lot-sum-sub">Water content gain</div>
+        </div>
+        <div class="lot-sum-cell">
+          <div class="lot-sum-label">Total Output</div>
+          <div class="lot-sum-val" style="color:#1565c0;">${totalOutput.toLocaleString('en-IN')}</div>
+          <div class="lot-sum-sub">Actual + Excess</div>
+        </div>
+        <div class="lot-sum-cell">
+          <div class="lot-sum-label">Balance Bags</div>
+          <div class="lot-sum-val" style="${balColor};">${balance.toLocaleString('en-IN')}</div>
+          <div class="lot-sum-sub">Input − Actual only</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Create Lot ──
+async function createLot() {
+  const name = document.getElementById('lotName').value.trim();
+  const bags = parseFloat(document.getElementById('lotInputBags').value);
+  const date = document.getElementById('lotDate').value;
+  if (!name) { toast('Enter a lot name', 'fail'); return; }
+  if (isNaN(bags) || bags <= 0) { toast('Enter valid input bags', 'fail'); return; }
+  if (!date) { toast('Select a date', 'fail'); return; }
+
+  const { error } = await sb.from('manufacturing_lots').insert({
+    lot_name: name, input_bags: bags, lot_date: date, status: 'open'
+  });
+  if (error) { toast(error.message, 'fail'); return; }
+  document.getElementById('lotName').value = '';
+  document.getElementById('lotInputBags').value = '';
+  toast('✅ Lot created!', 'ok');
+  loadLots();
+}
+
+// ── Add Manufacturing Entry ──
+async function addLotEntry(lotId) {
+  const date = document.getElementById('entDate_' + lotId).value;
+  const bags = parseFloat(document.getElementById('entBags_' + lotId).value);
+  if (!date) { toast('Select entry date', 'fail'); return; }
+  if (isNaN(bags) || bags <= 0) { toast('Enter valid bags count', 'fail'); return; }
+
+  // Check balance
+  const lot = ALL_LOTS.find(l => l.id === lotId);
+  if (lot) {
+    const used = lot.entries.reduce((s, e) => s + Number(e.bags_used), 0);
+    if (used + bags > Number(lot.input_bags)) {
+      toast('⚠️ Cannot exceed input bags (' + lot.input_bags + '). Balance: ' + (Number(lot.input_bags) - used), 'fail');
+      return;
+    }
+  }
+
+  const { error } = await sb.from('lot_entries').insert({ lot_id: lotId, entry_date: date, bags_used: bags });
+  if (error) { toast(error.message, 'fail'); return; }
+  document.getElementById('entBags_' + lotId).value = '';
+  toast('✅ Entry added!', 'ok');
+  loadLots();
+}
+
+// ── Add Excess Entry ──
+async function addLotExcess(lotId) {
+  const date = document.getElementById('exDate_' + lotId).value;
+  const bags = parseFloat(document.getElementById('exBags_' + lotId).value);
+  if (!date) { toast('Select date', 'fail'); return; }
+  if (isNaN(bags) || bags <= 0) { toast('Enter valid excess bags', 'fail'); return; }
+
+  const { error } = await sb.from('lot_excess').insert({ lot_id: lotId, entry_date: date, excess_bags: bags });
+  if (error) { toast(error.message, 'fail'); return; }
+  document.getElementById('exBags_' + lotId).value = '';
+  toast('✅ Excess entry added!', 'ok');
+  loadLots();
+}
+
+// ── Delete Manufacturing Entry ──
+async function delLotEntry(entryId, lotId) {
+  if (!confirm('Delete this manufacturing entry?')) return;
+  await sb.from('lot_entries').delete().eq('id', entryId);
+  toast('🗑️ Entry deleted', 'ok');
+  loadLots();
+}
+
+// ── Delete Excess Entry ──
+async function delLotExcess(excessId, lotId) {
+  if (!confirm('Delete this excess entry?')) return;
+  await sb.from('lot_excess').delete().eq('id', excessId);
+  toast('🗑️ Excess entry deleted', 'ok');
+  loadLots();
+}
+
+// ── Close Lot ──
+async function closeLot(lotId) {
+  if (!confirm('Close this lot? No more entries can be added after closing.')) return;
+  await sb.from('manufacturing_lots').update({ status: 'closed' }).eq('id', lotId);
+  toast('🔒 Lot closed!', 'ok');
+  loadLots();
+}
+
+// ── Delete Lot ──
+async function deleteLot(lotId, name) {
+  if (!confirm('⚠️ DELETE lot "' + name + '"?\nAll entries and excess records will be deleted. This cannot be undone.')) return;
+  await sb.from('lot_entries').delete().eq('lot_id', lotId);
+  await sb.from('lot_excess').delete().eq('lot_id', lotId);
+  await sb.from('manufacturing_lots').delete().eq('id', lotId);
+  toast('🗑️ Lot deleted', 'ok');
+  loadLots();
+}
+
+</script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // Patch XLSX to enable cell styles (xlsx 0.18.x writeFile needs bookSST + cellStyles)
@@ -199,6 +510,57 @@ tbody td{padding:12px 15px;font-size:.9rem;}
 .filter-bar input:focus,.filter-bar select:focus{border-color:var(--g2);}
 
 input[type=checkbox]{width:16px;height:16px;accent-color:var(--g2);cursor:pointer;}
+/* ═══════════════════════════════════════
+   MANUFACTURING LOTS
+═══════════════════════════════════════ */
+.lot-create-bar{background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:2px solid var(--g2);border-radius:var(--radius);padding:16px 20px;margin-bottom:18px;box-shadow:var(--shadow);}
+.lot-create-bar .qa-title{font-family:'Baloo 2',sans-serif;font-size:1rem;font-weight:700;color:var(--g1);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.lot-create-fields{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+.lot-create-fields .lf{display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px;}
+.lot-create-fields .lf label{font-size:.73rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.lot-create-fields .lf input{padding:10px 12px;border:2px solid var(--border);border-radius:9px;font-size:.92rem;font-family:'Nunito',sans-serif;outline:none;background:white;color:var(--text);transition:border .18s;}
+.lot-create-fields .lf input:focus{border-color:var(--g2);}
+.lot-card{background:white;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px;overflow:hidden;}
+.lot-hdr{background:linear-gradient(90deg,#1b5e20,#2e7d32);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+.lot-hdr-closed{background:linear-gradient(90deg,#5a705a,#7a907a);}
+.lot-hdr-name{font-family:'Baloo 2',sans-serif;font-size:1.05rem;font-weight:800;color:white;display:flex;align-items:center;gap:8px;}
+.lot-hdr-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.lot-hdr-meta span{font-size:.8rem;color:rgba(255,255,255,.88);font-weight:600;}
+.lot-badge-open{background:#c8e6c9;color:#1b5e20;display:inline-block;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:800;}
+.lot-badge-closed{background:#ffe0b2;color:#e65100;display:inline-block;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:800;}
+.lot-bal-bar{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:2px solid #e8f5e9;}
+.lot-bal-cell{padding:14px 18px;text-align:center;border-right:1px solid #e8f5e9;}
+.lot-bal-cell:last-child{border-right:none;}
+.lot-bal-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin-bottom:4px;}
+.lot-bal-val{font-size:1.45rem;font-weight:800;font-family:'Baloo 2',sans-serif;}
+.lot-body{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+.lot-section{padding:16px 20px;}
+.lot-section:first-child{border-right:1px solid #e8f5e9;}
+.lot-sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.lot-sec-title{font-size:.8rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;}
+.lot-etbl{width:100%;border-collapse:collapse;font-size:.83rem;}
+.lot-etbl thead{background:#e8f5e9;}
+.lot-etbl th{padding:7px 10px;text-align:left;color:var(--g1);font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;font-weight:700;}
+.lot-etbl td{padding:8px 10px;border-bottom:1px solid #f0f4f0;}
+.lot-etbl tr:last-child td{border-bottom:none;}
+.lot-qentry{background:#f8fff8;border:1.5px dashed #a5d6a7;border-radius:9px;padding:10px 14px;margin-top:10px;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
+.lot-qexcess{background:#fff8e1;border:1.5px dashed #ffe082;border-radius:9px;padding:10px 14px;margin-top:10px;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
+.lot-qentry .qf,.lot-qexcess .qf{display:flex;flex-direction:column;gap:3px;flex:1;min-width:90px;}
+.lot-qentry .qf label,.lot-qexcess .qf label{font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.lot-qentry .qf input,.lot-qexcess .qf input{padding:7px 10px;border:2px solid var(--border);border-radius:8px;font-size:.85rem;font-family:'Nunito',sans-serif;outline:none;background:white;}
+.lot-qentry .qf input:focus{border-color:var(--g2);}
+.lot-qexcess .qf input{border-color:#ffe082;}
+.lot-qexcess .qf input:focus{border-color:#f59f00;}
+.btn-amber{background:#f59f00;color:white;}
+.btn-amber:hover{background:#e08e00;}
+.lot-footer{background:#f4faf4;border-top:2px solid #e8f5e9;padding:14px 20px;}
+.lot-sum-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.lot-sum-cell{text-align:center;padding:6px 0;}
+.lot-sum-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin-bottom:4px;}
+.lot-sum-val{font-size:1.1rem;font-weight:800;font-family:'Baloo 2',sans-serif;}
+.lot-sum-sub{font-size:.68rem;color:var(--muted);margin-top:2px;}
+@media(max-width:640px){.lot-body{grid-template-columns:1fr;}.lot-section:first-child{border-right:none;border-bottom:1px solid #e8f5e9;}.lot-sum-grid{grid-template-columns:repeat(2,1fr);}.lot-bal-bar{grid-template-columns:1fr;}}
+
 
 /* WATERMARK */
 .page.active::after {
@@ -423,6 +785,7 @@ tr.drag-over{border-top:3px solid #2e7d32 !important;background:#f1f8f1 !importa
       <button class="tab-btn active" onclick="switchTab('pending')">📋 Pending Bills</button>
       <button class="tab-btn" onclick="switchTab('history')">📜 Paid History</button>
       <button class="tab-btn" onclick="goCheque()">🏦 Cheque Entry</button>
+      <button class="tab-btn" onclick="switchTab('lots')">🌾 Manufacturing Lots</button>
     </div>
 
     <!-- TAB: PENDING BILLS -->
@@ -449,6 +812,45 @@ tr.drag-over{border-top:3px solid #2e7d32 !important;background:#f1f8f1 !importa
           </tr></thead>
           <tbody id="custBody"><tr><td colspan="5"><div class="empty"><div class="ei">⏳</div>Loading...</div></td></tr></tbody>
         </table>
+      </div>
+    </div>
+
+
+    <!-- TAB: MANUFACTURING LOTS -->
+    <div class="tab-panel" id="tabLots">
+      <!-- Create Lot Bar -->
+      <div class="lot-create-bar">
+        <div class="qa-title">🌾 Create New Lot</div>
+        <div class="lot-create-fields">
+          <div class="lf">
+            <label>Lot Name</label>
+            <input type="text" id="lotName" placeholder="e.g. Lot #12 – Toor Dal"/>
+          </div>
+          <div class="lf" style="max-width:170px;">
+            <label>Input Bags</label>
+            <input type="number" id="lotInputBags" placeholder="100" min="1"/>
+          </div>
+          <div class="lf" style="max-width:170px;">
+            <label>Date</label>
+            <input type="date" id="lotDate"/>
+          </div>
+          <button class="btn btn-green" style="align-self:flex-end;" onclick="createLot()">✅ Create Lot</button>
+        </div>
+      </div>
+
+      <!-- Lot List Header -->
+      <div class="sec-head">
+        <div class="sec-title">🌾 Lots <span id="lotCountBadge" style="font-size:.82rem;color:var(--muted);font-weight:600;"></span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" id="lotFilterAll" onclick="setLotFilter('all')" style="background:var(--gbg);">All</button>
+          <button class="btn btn-outline btn-sm" id="lotFilterOpen" onclick="setLotFilter('open')">Open</button>
+          <button class="btn btn-outline btn-sm" id="lotFilterClosed" onclick="setLotFilter('closed')">Closed</button>
+        </div>
+      </div>
+
+      <!-- Lots Container -->
+      <div id="lotsContainer">
+        <div class="empty"><div class="ei">⏳</div>Loading lots...</div>
       </div>
     </div>
 
@@ -848,6 +1250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     showPage('loginPage');
   }
 
+  document.getElementById('lotDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('loginPass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
   document.getElementById('loginEmail').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
   document.getElementById('qaAmt').addEventListener('keydown', e => { if(e.key==='Enter') quickAddBill(); });
@@ -861,11 +1264,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 function switchTab(tab) {
   CUR_TAB = tab;
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    b.classList.toggle('active', (i===0 && tab==='pending') || (i===1 && tab==='history'));
+    b.classList.toggle('active',
+      (i===0 && tab==='pending') ||
+      (i===1 && tab==='history') ||
+      (i===3 && tab==='lots')
+    );
   });
   document.getElementById('tabPending').classList.toggle('active', tab==='pending');
   document.getElementById('tabHistory').classList.toggle('active', tab==='history');
+  document.getElementById('tabLots').classList.toggle('active', tab==='lots');
   if (tab==='history') loadPaidHistory();
+  if (tab==='lots') loadLots();
 }
 
 // ═══════════════════════════════════════
