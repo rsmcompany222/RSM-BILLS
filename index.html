@@ -1250,12 +1250,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     showPage('loginPage');
   }
 
-  document.getElementById('lotDate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('loginPass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
-  document.getElementById('loginEmail').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
-  document.getElementById('qaAmt').addEventListener('keydown', e => { if(e.key==='Enter') quickAddBill(); });
-  document.getElementById('qaRef').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('qaAmt').focus(); });
-  document.getElementById('cqAmt2').addEventListener('keydown', e => { if(e.key==='Enter') quickAddCheque(); });
+  const lotDateEl = document.getElementById('lotDate');
+  if (lotDateEl) lotDateEl.value = new Date().toISOString().split('T')[0];
+  document.getElementById('loginPass')?.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('loginEmail')?.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('qaAmt')?.addEventListener('keydown', e => { if(e.key==='Enter') quickAddBill(); });
+  document.getElementById('qaRef')?.addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('qaAmt')?.focus(); });
+  document.getElementById('cqAmt2')?.addEventListener('keydown', e => { if(e.key==='Enter') quickAddCheque(); });
 });
 
 // ═══════════════════════════════════════
@@ -1267,6 +1268,7 @@ function switchTab(tab) {
     b.classList.toggle('active',
       (i===0 && tab==='pending') ||
       (i===1 && tab==='history') ||
+      (i===2 && tab==='cheque') ||
       (i===3 && tab==='lots')
     );
   });
