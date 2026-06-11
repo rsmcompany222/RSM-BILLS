@@ -1264,13 +1264,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ═══════════════════════════════════════
 function switchTab(tab) {
   CUR_TAB = tab;
-  document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    b.classList.toggle('active',
-      (i===0 && tab==='pending') ||
-      (i===1 && tab==='history') ||
-      (i===2 && tab==='cheque') ||
-      (i===3 && tab==='lots')
-    );
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const oc = b.getAttribute('onclick') || '';
+    const isActive =
+      (tab === 'pending' && oc.includes("'pending'")) ||
+      (tab === 'history' && oc.includes("'history'")) ||
+      (tab === 'lots'    && oc.includes("'lots'"));
+    b.classList.toggle('active', isActive);
   });
   document.getElementById('tabPending').classList.toggle('active', tab==='pending');
   document.getElementById('tabHistory').classList.toggle('active', tab==='history');
